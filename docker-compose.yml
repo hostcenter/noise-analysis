@@ -1,0 +1,71 @@
+services:
+  analyzer:
+    build:
+      context: .
+      dockerfile: analysis/Dockerfile
+    container_name: noise-analyzer
+    restart: unless-stopped
+    devices:
+      - "/dev/snd:/dev/snd"
+    group_add:
+      - audio
+    environment:
+      SOURCE: ${SOURCE:-alsa}
+      ALSA_DEVICE: ${ALSA_DEVICE:-default}
+      LOG_DIR: /data/logs
+      EVENT_THRESHOLD: ${EVENT_THRESHOLD:-0.3}
+      EVENT_REFRACTORY: ${EVENT_REFRACTORY:-10}
+      EPISODE_REFRACTORY: ${EPISODE_REFRACTORY:-10}
+      EVENT_BLOCKLIST: ${EVENT_BLOCKLIST:-}
+      SPL_INTERVAL: ${SPL_INTERVAL:-1}
+    volumes:
+      - ./logs:/data/logs
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: noise-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+
+  summarizer:
+    build:
+      context: .
+      dockerfile: summarizer/Dockerfile
+    container_name: noise-summarizer
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      LOG_DIR: /data/logs
+      SUMMARY_HOUR: ${SUMMARY_HOUR:-7}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./logs:/data/logs
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: noise-dashboard
+    restart: unless-stopped
+    environment:
+      LOG_DIR: /data/logs
+      DB_PATH: /data/logs/dashboard.db
+      INGEST_INTERVAL: ${DASH_INGEST_INTERVAL:-2}
+      EVENT_BLOCKLIST: ${EVENT_BLOCKLIST:-}
+      EPISODE_REFRACTORY: ${EPISODE_REFRACTORY:-10}
+      WEEKDAY_RECALC: ${WEEKDAY_RECALC:-300}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./logs:/data/logs
+      - ./dashboard/static:/app/static:ro  # live UI edits, no rebuild needed
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  ollama:
