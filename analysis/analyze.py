@@ -30,6 +30,8 @@ EVENT_REFRACTORY = float(os.environ.get("EVENT_REFRACTORY", "10.0"))
 # strongest class above threshold wins, all other simultaneous detections
 # (nested AudioSet categories) are skipped
 EPISODE_REFRACTORY = float(os.environ.get("EPISODE_REFRACTORY", "10.0"))
+EPISODE_QUIET = float(os.environ.get("EPISODE_QUIET", "2.0"))   # silence that ends an episode
+EPISODE_MAX = float(os.environ.get("EPISODE_MAX", "120.0"))     # force-log cap
 # classes to never log (impossible at this location); separator is ";" because
 # AudioSet display names can contain commas ("Cattle, bovinae")
 EVENT_BLOCKLIST = {
@@ -186,6 +188,9 @@ def run_loop(frames, yam, hann, freqs, a_weight, class_names):
     last_logged = {}
     last_spl = time.time()
     last_event = 0.0
+    ep_start = None      # episode in progress: start ts
+    ep_best = None       # (class idx, confidence, spl) at the loudest moment
+    ep_last_loud = None  # last ts with a loud frame
     spl_vals = []
     bands = {}
     start = time.time()
@@ -208,27 +213,49 @@ def run_loop(frames, yam, hann, freqs, a_weight, class_names):
             spl_vals = []
         scores = yam.scores(frame)
         top = np.argsort(scores)[::-1]
-        # log at most one event per EPISODE_REFRACTORY seconds: the strongest
-        # non-blocklisted class above threshold wins
-        if now - last_event >= EPISODE_REFRACTORY:
-            for i in top[:10]:
-                if scores[i] < EVENT_THRESHOLD:
-                    break
-                if class_names[int(i)] in EVENT_BLOCKLIST:
-                    continue
-                if now - last_logged.get(i, 0.0) >= EVENT_REFRACTORY:
-                    last_logged[i] = now
-                    last_event = now
-                    append_json(
-                        "events.jsonl",
-                        {
-                            "ts": iso_now(),
-                            "event": class_names[int(i)],
-                            "confidence": round(float(scores[i]), 3),
-                            "spl_db": dba,
-                        },
-                    )
-                    break
+        # strongest non-blocklisted class above threshold in this frame
+        best = None
+        for i in top[:10]:
+            if scores[i] < EVENT_THRESHOLD:
+                break
+            if class_names[int(i)] in EVENT_BLOCKLIST:
+                continue
+            best = i
+            break
+        if best is not None:
+            # episode continues (or starts a new one after the refractory)
+            if ep_start is None:
+                if now - last_event >= EPISODE_REFRACTORY:
+                    ep_start = now
+                    ep_best = (best, float(scores[best]), dba)
+                    ep_last_loud = now
+            else:
+                ep_last_loud = now
+                if scores[best] > ep_best[1]:
+                    ep_best = (best, float(scores[best]), dba)
+            # cap: force-log episodes that never go quiet
+            if ep_start is not None and now - ep_start >= EPISODE_MAX:
+                ep_last_loud = now
+        elif ep_start is not None and now - ep_last_loud >= EPISODE_QUIET:
+            # episode over (quiet for EPISODE_QUIET seconds) → write it with
+            # its duration; ts = episode start, type/conf/spl at the loudest
+            last_event = ep_start
+            last_logged[ep_best[0]] = ep_start
+            bi, bconf, bspl = ep_best
+            append_json(
+                "events.jsonl",
+                {
+                    "ts": datetime.fromtimestamp(ep_start, timezone.utc)
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z"),
+                    "event": class_names[int(bi)],
+                    "confidence": round(bconf, 3),
+                    "spl_db": bspl,
+                    "duration_s": round(ep_last_loud - ep_start, 1),
+                },
+            )
+            ep_start = None
+            ep_best = None
         if RUN_SECONDS > 0 and time.time() - start >= RUN_SECONDS:
             break
 

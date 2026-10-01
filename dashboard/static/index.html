@@ -27,6 +27,66 @@
   }
   .nav-item:hover { background: #eaeef2; }
   .nav-item.active { background: #2f6feb; color: #fff; }
+  .nav-item .tag {
+    float: right; font-size: 9px; padding: 1px 5px; border-radius: 8px;
+    margin-left: 4px; background: #eaeef2; color: #57606a; font-weight: 400;
+  }
+  .nav-item .tag.hrs { background: #f3e8ff; color: #6b21a8; }   /* 22-06h active: light violet */
+  .nav-item .tag.hrs.off {
+    background: #e7f0fe; color: #0969da;   /* 00-24h active: light blue */
+    opacity: 1; text-decoration: none;
+  }
+  .nav-item .tag.thr { background: #fff3bf; color: #8a6d00; }            /* default */
+  .nav-item .tag.thr.thr-blue { background: #e3f7e8; color: #1a7f37; }   /* >-60 */
+  .nav-item .tag.thr.thr-yellow { background: #fff3bf; color: #8a6d00; } /* >-45 */
+  .nav-item .tag.thr.thr-red { background: #ffebe9; color: #a40e26; }    /* >-40 */
+
+  /* radio buttons as colored pills — always colored, selected = bold + thick border */
+  .pill-group {
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: 3px; margin: 6px 4px 12px;
+  }
+  label.pill-radio {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    padding: 2px 12px; border-radius: 12px; font-size: 13px;
+    border: 2px solid transparent; font-weight: 400;
+  }
+  label.pill-radio input {
+    position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0;
+  }
+  /* base colors per option */
+  label.pill-radio:has(input[name="hours-mode"][value="all"]) {
+    background: #e7f0fe; color: #0969da;
+  }
+  label.pill-radio:has(input[name="hours-mode"][value="night"]) {
+    background: #f3e8ff; color: #6b21a8;
+  }
+  label.pill-radio:has(input[name="loud-db"][value="-60"]) {
+    background: #e3f7e8; color: #1a7f37;
+  }
+  label.pill-radio:has(input[name="loud-db"][value="-45"]) {
+    background: #fff3bf; color: #8a6d00;
+  }
+  label.pill-radio:has(input[name="loud-db"][value="-40"]) {
+    background: #ffebe9; color: #a40e26;
+  }
+  /* selected: bold + thick border in the strong tone */
+  label.pill-radio:has(input[name="hours-mode"][value="all"]:checked) {
+    font-weight: 700; border-color: #24292f;
+  }
+  label.pill-radio:has(input[name="hours-mode"][value="night"]:checked) {
+    font-weight: 700; border-color: #24292f;
+  }
+  label.pill-radio:has(input[name="loud-db"][value="-60"]:checked) {
+    font-weight: 700; border-color: #24292f;
+  }
+  label.pill-radio:has(input[name="loud-db"][value="-45"]:checked) {
+    font-weight: 700; border-color: #24292f;
+  }
+  label.pill-radio:has(input[name="loud-db"][value="-40"]:checked) {
+    font-weight: 700; border-color: #24292f;
+  }
+  .nav-item.active .tag { background: rgba(255,255,255,0.25); color: #fff; }
 
   .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   #updated { display: block; margin: -12px 8px 16px; color: #656d76; font-size: 12px; }
@@ -69,7 +129,16 @@
   #loud-table th, #loud-table td { text-align: left; padding: 5px 14px; }
   #loud-table thead th { color: #656d76; font-weight: 600; border-bottom: 1px solid #d0d7de; }
   #loud-table tbody tr + tr td { border-top: 1px solid #eaeef2; }
-  #loud-table tbody tr.night td { background: #ffebe9; }
+
+
+  #long-table {
+    border-collapse: separate; border-spacing: 0; font-size: 13px;
+    min-width: 560px; background: #ffffff; border: 1px solid #d0d7de;
+    border-radius: 8px; overflow: hidden;
+  }
+  #long-table th, #long-table td { text-align: left; padding: 5px 14px; }
+  #long-table thead th { color: #656d76; font-weight: 600; border-bottom: 1px solid #d0d7de; }
+  #long-table tbody tr + tr td { border-top: 1px solid #eaeef2; }
   .hint { color: #656d76; font-size: 12px; }
 
   /* narrow screens: nav collapses to a top row */
@@ -88,17 +157,23 @@
 <body>
 <aside>
   <h1>Nachtunruhe</h1>
-  <span id="updated"></span>
   <nav id="nav">
-    <button class="nav-item active" data-view="live">Last 5 min</button>
-    <button class="nav-item" data-view="speech">Human</button>
-    <button class="nav-item" data-view="motornoise">Motors</button>
-    <button class="nav-item" data-view="music">Music</button>
-    <button class="nav-item" data-view="events">Loudness</button>
-    <button class="nav-item" data-view="threed">3D</button>
-    <button class="nav-item" data-view="heatmap">Weekday</button>
-    <button class="nav-item" data-view="loudest">Top 100 loudest</button>
     <button class="nav-item" data-view="readme">Readme</button>
+    <button class="nav-item active" data-view="live">Last 5 min</button>
+    <button class="nav-item" data-view="events">Loudness (30d)</button>
+    <button class="nav-item" data-view="threed">3D (7d)</button>
+    <div class="pill-group" style="flex-direction:row;align-items:center">
+      <label class="pill-radio">
+        <input type="radio" name="hours-mode" value="all" checked> 00-24h
+      </label>
+      <label class="pill-radio">
+        <input type="radio" name="hours-mode" value="night"> 22-06h
+      </label>
+    </div>
+    <button class="nav-item" data-view="day3w">Daily (3w) <span class="tag hrs">22-06</span></button>
+    <button class="nav-item" data-view="heatmap">Weekday (3w) <span class="tag hrs">22-06</span></button>
+    <button class="nav-item" data-view="loudest">Loudest (3w) <span class="tag hrs">22-06</span></button>
+    <button class="nav-item" data-view="longest">Longest (3w) <span class="tag hrs">22-06</span></button>
   </nav>
 </aside>
 
@@ -125,36 +200,35 @@
     <section id="view-heatmap" hidden>
       <h2>When does it happen? (hour × weekday)</h2>
       <div id="heatmap-list"></div>
-      <div class="hint">One blue + one red grid per group · counts per hour × weekday · all data · local time (container TZ) · brighter = more events.</div>
+      <div class="hint">One red grid per group · only events louder than the selected threshold · counts per hour × weekday · all data · local time (container TZ) · brighter = more events.</div>
     </section>
 
-    <section id="view-motornoise" hidden>
-      <h2>When does motor noise happen?</h2>
-      <div class="hint" style="margin-bottom:8px">Event counts per hour of day, one row per day.</div>
-      <div id="mnoise" class="chart"></div>
+    <section id="view-day3w" hidden>
+      <h2>Day last 3w</h2>
+      <div id="day3w-list"></div>
+      <div class="hint">One grid per group · episodes per hour of day, one row per day · raw counts, no averaging · last 3 weeks · stacked blue/red by the selected threshold.</div>
     </section>
 
-    <section id="view-speech" hidden>
-      <h2>When does the Human category happen?</h2>
-      <div class="hint" style="margin-bottom:8px">Event counts per hour of day, one row per day.</div>
-      <div id="snoise" class="chart"></div>
-    </section>
-
-    <section id="view-music" hidden>
-      <h2>When does music happen?</h2>
-      <div class="hint" style="margin-bottom:8px">Event counts per hour of day, one row per day.</div>
-      <div id="munoise" class="chart"></div>
-    </section>
-
-    <section id="view-loudest" hidden>
-      <h2>Top 100 loudest</h2>
+                <section id="view-loudest" hidden>
+      <h2>Loudest (3w)</h2>
       <table id="loud-table">
         <thead>
-          <tr><th>dB</th><th>Noise type</th><th>Time</th><th>Weekday</th><th>Date</th></tr>
+          <tr><th>Weekday</th><th>Date</th><th>Time</th><th>Noise type</th><th>dB</th></tr>
         </thead>
         <tbody id="loud-body"></tbody>
       </table>
-      <div class="hint">Whole recording period · loudest first · max 100 entries · times as hour only (24 h).</div>
+      <div class="hint">Loudest 300 episodes of the last three weeks · times as hour only (24 h) · rows at 22-06h highlighted red.</div>
+    </section>
+
+    <section id="view-longest" hidden>
+      <h2>Longest (3w)</h2>
+      <table id="long-table">
+        <thead>
+          <tr><th>Weekday</th><th>Date</th><th>Time</th><th>Noise type</th><th>Duration</th><th>Peak dB</th></tr>
+        </thead>
+        <tbody id="long-body"></tbody>
+      </table>
+      <div class="hint">Longest 300 episodes of the last three weeks · rows at 22-06h highlighted red.</div>
     </section>
 
     <section id="view-readme" hidden>
@@ -181,26 +255,44 @@
         <table>
           <tr><th>View</th><th>What you see</th><th>Question it answers</th></tr>
           <tr><td><b>Last 5 min</b></td><td>A tall strip showing the last
-              five minutes, newest on top. White line = how loud the peaks
-              are. Pills = recognised sounds, colored by type.</td>
+              five minutes, newest on top. Black line = how loud the peaks
+              are. Black pills = recognised sounds, sitting on the line at
+              their loudness. The background is tinted by loudness range:
+              green = audible, yellow = loud, red = very loud.</td>
               <td>"What is happening right now?"</td></tr>
-          <tr><td><b>Motors</b></td><td>Every row is one day, every column an
-              hour of that day. The number and blue/red bar show how many
-              motor-vehicle sounds happened. Below: how loud those events
-              were.</td>
-              <td>"When do cars and motorcycles pass, and how loud?"</td></tr>
-          <tr><td><b>Speech</b> / <b>Music</b></td><td>Same idea, but for
-              voices and music.</td>
-              <td>"When do people talk or play music outside?"</td></tr>
-          <tr><td><b>Distribution</b></td><td>Which sound types make up what
-              share of all events (in&nbsp;%), how they spread across the
-              days of the week (3D chart), and how loud each type typically
-              is.</td>
-              <td>"What is my street made of?"</td></tr>
-          <tr><td><b>Weekday</b></td><td>A colored grid: hours 0–23 across,
-              weekdays down. Bright cells = many events in that hour.</td>
-              <td>"What does a typical week look like?"</td></tr>
+          <tr><td><b>Loudness (30d)</b></td><td>A grid: sound families as
+              columns, 1-dB loudness steps as rows (loudest on top). The
+              colored bar in each cell shows how many episodes fell into
+              that loudness range — blue = audible, orange = loud,
+              red = very loud.</td>
+              <td>"How loud is my street, and which family dominates?"</td></tr>
+          <tr><td><b>3D (7d)</b></td><td>A floating dot cloud over hour of
+              day, weekday, and loudness. Dot size = how many episodes,
+              color = loud (red) or quieter (blue).</td>
+              <td>"Where do the loud spots cluster?"</td></tr>
+          <tr><td><b>Weekday (4w)</b></td><td>One grid per sound family:
+              hours across, days down, averaged over four weeks. Each cell
+              shows nested surfaces — <b>green</b> = audible episodes,
+              <b>orange</b> = loud, <b>red</b> = very loud — so a mostly
+              red cell means "loud here". Night columns (22–06) are tinted
+              light violet, day columns light green.</td>
+              <td>"What does a typical week look like for each family?"</td></tr>
+          <tr><td><b>Loudest (3w)</b></td><td>Every episode of the last
+              three weeks, loudest first — weekday, date, time, type, and
+              peak loudness (cell tinted by loudness range). Night rows
+              (22:00–06:59) have a violet time cell.</td>
+              <td>"What were the biggest noises recently?"</td></tr>
+          <tr><td><b>Longest (3w)</b></td><td>Same list, but ranked by how
+              long each episode lasted.</td>
+              <td>"What drags on the longest?"</td></tr>
         </table>
+
+        <h3>Sidebar filters</h3>
+        <p><b>22-06 hours</b> switches the episode views between all hours
+        (00–24h) and night hours only (22:00–06:59) — the small badges next
+        to the view names show which views react to it (they dim when all
+        hours are shown). <b>"Louder than"</b> sets where "loud" begins for
+        the 3D colors and the Weekday grids.</p>
 
         <h3>How loud is "loud"? (the dB numbers)</h3>
         <p>The loudness numbers (dB) here are <b>relative</b> — the microphone
@@ -208,25 +300,26 @@
         <b>compare</b>: −60 is very quiet (nighttime lull), −50 is normal
         street murmur, −40 is clearly loud (a truck or shouting), −30 and
         above is very loud at the window. Bigger number (closer to zero) =
-        louder. In the Motors/Speech/Music views <b>red bars mean night
-        (22:00–07:00)</b> and blue bars mean daytime — so nightly noise
-        catches the eye immediately.</p>
+        louder. The color code everywhere: <b>green/blue = audible</b>,
+        <b>yellow/orange = loud</b>, <b>red = very loud</b>.</p>
 
-        <h3>What counts as one event?</h3>
-        <p>One real-world occurrence = one event. When a car passes by, the
+        <h3>What counts as one episode?</h3>
+        <p>One real-world occurrence = one episode. When a car passes by, the
         computer briefly recognises several sound categories at once — but
-        only the strongest one is written down, and then the notebook stays
-        shut for 10 seconds. So one passing car ≈ one line in the diary, not
-        five. Sounds that are impossible here (cows, owls, fireworks in
-        January…) and pure silence are filtered out automatically.</p>
+        only the loudest moment is written down, together with <b>how long
+        the episode lasted</b>. Then the notebook stays shut for 10 seconds.
+        So one passing car ≈ one line in the diary, not five. Episodes with
+        a duration ≥ 10 seconds are the ones that really drag on. Sounds
+        that are impossible here (cows, owls, whales, artillery…) and pure
+        silence are filtered out automatically.</p>
 
         <h3>Sound families</h3>
         <p>The computer originally distinguishes over 500 sound types — far
         too many to read. Nachtunruhe sorts them into a handful of
-        families: <b>Human</b> (voices, conversations), <b>Animals &amp;
-        Birds</b>, <b>Motor</b> (cars, motorcycles, trucks, engines),
-        <b>Horns and beeps</b> (also sirens and bells), <b>Rail</b>,
-        <b>Music</b>, and <b>Other</b>. All views use these same families.</p>
+        families: <b>Human</b> (voices, conversations — including animal
+        sounds like birds, dogs and cats), <b>Motor</b> (cars, motorcycles,
+        trucks, engines), <b>Music</b>, and <b>Other</b>. All views use
+        these same families.</p>
 
         <h3>Privacy</h3>
         <p>No audio is ever recorded, stored, or transmitted. No internet
@@ -246,6 +339,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=123"></script>
+<script src="/app.js?v=228"></script>
 </body>
 </html>

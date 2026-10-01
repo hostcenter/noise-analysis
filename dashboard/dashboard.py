@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS spl (
   low   REAL, mid REAL, high REAL
 );
 CREATE TABLE IF NOT EXISTS events (
-  ts REAL, event TEXT, confidence REAL, spl REAL,
+  ts REAL, event TEXT, confidence REAL, spl REAL, duration REAL,
   UNIQUE(ts, event)
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
@@ -160,12 +160,18 @@ def event_row(e):
     if ts - _last_episode["ts"] < EPISODE_REFRACTORY:
         return None  # belongs to the previous episode
     _last_episode["ts"] = ts
-    return (ts, e["event"], e.get("confidence"), e.get("spl_db"))
+    dur = e.get("duration_s")
+    return (ts, e["event"], e.get("confidence"), e.get("spl_db"),
+            float(dur) if dur is not None else None)
 
 
 def ingester(stop):
     con = connect()
     con.executescript(SCHEMA)
+    # migrate pre-duration databases
+    cols = [r[1] for r in con.execute("PRAGMA table_info(events)")]
+    if "duration" not in cols:
+        con.execute("ALTER TABLE events ADD COLUMN duration REAL")
     con.commit()
     while not stop.is_set():
         try:
@@ -178,7 +184,7 @@ def ingester(stop):
             n2 = tail_file(
                 con,
                 "events.jsonl",
-                "INSERT OR IGNORE INTO events VALUES (?,?,?,?)",
+                "INSERT OR IGNORE INTO events VALUES (?,?,?,?,?)",
                 event_row,
             )
             if n1 or n2:
@@ -336,6 +342,7 @@ def api_hourly(
     to: float = Query(...),
     event: str = Query(default=""),
     by: str = Query(default="weekday"),
+    min_db: float = Query(default=-45),
 ):
     sql = "FROM events WHERE ts BETWEEN :f AND :t"
     params = {"f": from_, "t": to}
@@ -351,11 +358,25 @@ def api_hourly(
             SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'),
                    CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
                    COUNT(*), ROUND(AVG(spl), 1), ROUND(MAX(spl), 1),
-                   SUM(CASE WHEN COALESCE(spl, -999) >= -45 THEN 1 ELSE 0 END)
+                   SUM(CASE WHEN COALESCE(spl, -999) >= :mindb THEN 1 ELSE 0 END)
             """ + sql + " GROUP BY 1, 2 ORDER BY 1",
-            params,
+            {**params, "mindb": min_db},
         )
         return {"rows": [[r[0], r[1], r[2], r[3], r[4], r[5]] for r in rows]}
+
+    if by == "daybands":
+        # audible (<= BAND_LOUD), loud (BAND_LOUD..BAND_VERY), very loud (>= BAND_VERY)
+        rows = q(
+            """
+            SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'),
+                   CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
+                   SUM(CASE WHEN COALESCE(spl, -999) < :b1 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(spl, -999) >= :b1 AND COALESCE(spl, -999) < :b2 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(spl, -999) >= :b2 THEN 1 ELSE 0 END)
+            """ + sql + " GROUP BY 1, 2 ORDER BY 1",
+            {**params, "b1": BAND_LOUD, "b2": BAND_VERY},
+        )
+        return {"rows": [[r[0], r[1], r[2], r[3], r[4]] for r in rows]}
 
     if by == "week":
         rows = q(
@@ -402,6 +423,7 @@ def api_weekcounts(
     to: float = Query(...),
     split_db: float = Query(default=None),
     hourly: int = Query(default=0),
+    min_db: float = Query(default=-45),
 ):
     """[weekday 0=Sun, class, count] over the range — for the 3D distribution.
     With split_db: [weekday, class, count_below, count_above] instead.
@@ -411,13 +433,15 @@ def api_weekcounts(
             """
             SELECT CAST(strftime('%w', ts, 'unixepoch', 'localtime') AS INTEGER),
                    CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
-                   event, COUNT(*)
+                   event, COUNT(*), ROUND(AVG(spl), 1), ROUND(MAX(spl), 1),
+                   ROUND(SUM(duration), 1),
+                   SUM(CASE WHEN COALESCE(spl, -999) >= :mindb THEN 1 ELSE 0 END)
             FROM events WHERE ts BETWEEN :f AND :t
             GROUP BY 1, 2, 3
             """,
-            {"f": from_, "t": to},
+            {"f": from_, "t": to, "mindb": min_db},
         )
-        return {"rows": [[r[0], r[1], r[2], r[3]] for r in rows]}
+        return {"rows": [[r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]] for r in rows]}
     if split_db is None:
         rows = q(
             """
@@ -445,30 +469,43 @@ def api_weekcounts(
 
 @app.get("/api/loudest")
 def api_loudest(
-    limit: int = Query(default=500, le=5000),
-    min_db: float = Query(default=-40),
+    from_: float = Query(alias="from"),
+    to: float = Query(...),
+    limit: int = Query(default=50000, le=50000),
 ):
-    """Events at or above min_db, loudest first, whole period."""
+    """All episodes in the window, loudest first."""
     rows = q(
         "SELECT ts, event, confidence, spl FROM events "
-        "WHERE spl IS NOT NULL AND spl >= ? ORDER BY spl DESC LIMIT ?",
-        (min_db, limit),
+        "WHERE ts BETWEEN :f AND :t AND spl IS NOT NULL ORDER BY spl DESC LIMIT ?",
+        (from_, to, limit),
     )
     return {"rows": [[r[0], r[1], r[2], r[3]] for r in rows]}
 
 
 @app.get("/api/classdist")
-def api_classdist():
-    """[event, 1dB bucket, count] over the whole period; buckets -60..-31
-    (i.e. spl in [-60, -30))."""
-    rows = q("SELECT event, spl FROM events WHERE spl IS NOT NULL", ())
-    agg = {}
-    for ev, spl in rows:
-        b = int(math.floor(spl))
-        if -60 <= b <= -31:
-            key = (ev, b)
-            agg[key] = agg.get(key, 0) + 1
-    return {"rows": [[ev, b, n] for (ev, b), n in sorted(agg.items())]}
+def api_classdist(
+    from_: float = Query(alias="from"),
+    to: float = Query(...),
+):
+    """[event, 1dB bucket, nightCount, dayCount] over the range; buckets -60..-31
+    (i.e. spl in [-60, -30)). night = hours 22-06, day = 07-21 (local time)."""
+    rows = q(
+        """
+        SELECT event,
+               CAST(spl - 0.5 AS INTEGER) AS bucket_dbfs,
+               SUM(CASE WHEN CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) >= 22
+                         OR CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) <= 6
+                        THEN 1 ELSE 0 END),
+               SUM(CASE WHEN CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) >= 7
+                         AND CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) <= 21
+                        THEN 1 ELSE 0 END)
+        FROM events
+        WHERE ts BETWEEN :f AND :t AND spl IS NOT NULL
+        GROUP BY 1, 2
+        """,
+        {"f": from_, "t": to},
+    )
+    return {"rows": [[r[0], r[1], r[2], r[3]] for r in rows if -60 <= r[1] <= -31]}
 
 
 # ---------------------------------------------------------------- weekday cache
@@ -483,7 +520,7 @@ _GROUP_RULES = [
     ("Other", ["siren", "horn", "honk", "toot", "beep", "bell", "chime", "gong", "toll"]),
     ("Other", ["train", "rail", "tram", "subway", "metro", "locomotive"]),
     ("Other", ["aircraft", "airplane", "helicopter", "jet", "propeller"]),
-    ("Music", ["music", "singing", "choir", "guitar", "piano", "organ", "drum", "violin", "cello", "orchestra", "flute", "trumpet", "trombone", "brass", "woodwind", "saxophone", "clarinet", "harp", "banjo", "mandolin", "marimba", "xylophone", "percussion", "timpani", "instrument", "opera", "techno", "jazz", "reggae"]),
+    ("Other", ["music", "singing", "choir", "guitar", "piano", "organ", "drum", "violin", "cello", "orchestra", "flute", "trumpet", "trombone", "brass", "woodwind", "saxophone", "clarinet", "harp", "banjo", "mandolin", "marimba", "xylophone", "percussion", "timpani", "instrument", "opera", "techno", "jazz", "reggae"]),
     ("Motor", ["motor vehicle", "motorcycle", "car", "truck", "bus", "vehicle", "engine", "idling", "skidding", "accelerating", "revving", "vroom", "traffic", "tire", "brake", "driv"]),
     ("Human", ["speech", "conversation", "voice", "whisper", "shout", "yell", "cry", "sob", "whimper", "sigh", "gasp", "snor", "breath", "cough", "sneeze", "hiccup", "chatter", "crowd", "laugh", "giggle", "baby", "child", "kid", "talk", "man", "woman", "male", "female", "human"]),
     ("Human", ["bird", "pigeon", "dove", "crow", "caw", "coo", "chirp", "tweet", "owl", "hoot", "gull", "raven", "magpie", "wings", "duck", "goose", "animal", "cat", "meow", "purr", "caterwaul", "dog", "bark", "yip", "howl", "growl", "pets", "rodent", "insect", "bee", "wasp", "fly", "cricket", "frog", "snake", "fox", "horse", "livestock", "farm"]),
@@ -508,55 +545,89 @@ WEEKDAY_CACHE = {"ts": 0.0, "payload": {"groups": [], "grids": {}}}
 _weekday_lock = threading.Lock()
 
 
-WEEKDAY_THRESHOLDS = [-70, -65, -60, -55, -50, -45, -40, -35, -30]
+# loudness band edges (dB SPL): green audible <= 62, yellow loud 62-67, red very loud >= 67
+DB_OFFSET = 106.6                              # calibration (dB SPL - dBFS)
+BAND_LOUD = round(62 - DB_OFFSET, 1)           # ~ -44.6 dBFS
+BAND_VERY = round(67 - DB_OFFSET, 1)           # ~ -39.6 dBFS
+WEEKDAY_THRESHOLDS = [BAND_LOUD, BAND_VERY]
 
 
 def compute_weekday_cache():
-    sum_cols = ", ".join(
-        f"SUM(CASE WHEN COALESCE(spl, -999) >= {t} THEN 1 ELSE 0 END) AS t{i}"
-        for i, t in enumerate(WEEKDAY_THRESHOLDS)
+    sum_cols = (
+        "SUM(CASE WHEN COALESCE(spl, -999) >= -999 THEN 1 ELSE 0 END) AS tall, "
+        + ", ".join(
+            f"SUM(CASE WHEN COALESCE(spl, -999) >= {t} THEN 1 ELSE 0 END) AS t{i}"
+            for i, t in enumerate(WEEKDAY_THRESHOLDS)
+        )
     )
     rows = q(
         f"""
         SELECT CAST(strftime('%w', ts, 'unixepoch', 'localtime') AS INTEGER),
                CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
                event, {sum_cols}
-        FROM events GROUP BY 1, 2, 3
+        FROM events
+        WHERE ts >= strftime('%s', 'now') - 28 * 86400
+        GROUP BY 1, 2, 3
         """
     )
     days = q(
         """
         SELECT CAST(strftime('%w', ts, 'unixepoch', 'localtime') AS INTEGER),
                COUNT(DISTINCT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'))
-        FROM spl GROUP BY 1
+        FROM spl
+        WHERE ts >= strftime('%s', 'now') - 28 * 86400
+        GROUP BY 1
         """
     )
     coverage = {wd: n for wd, n in days}
-    grids_by_t = {t: {} for t in WEEKDAY_THRESHOLDS}
-    totals = {t: {} for t in WEEKDAY_THRESHOLDS}
+    grids_by_t = {"all": {}, **{str(t): {} for t in WEEKDAY_THRESHOLDS}}
+    totals = {"all": {}, **{str(t): {} for t in WEEKDAY_THRESHOLDS}}
     for row in rows:
         wd, h, ev = row[0], row[1], row[2]
         g = group_of(ev)
         if g in EXCLUDED_GROUPS:
             continue
-        for i, t in enumerate(WEEKDAY_THRESHOLDS):
+        for i, key in enumerate(["all"] + [str(t) for t in WEEKDAY_THRESHOLDS]):
             n = row[3 + i]
             if not n:
                 continue
-            grids = grids_by_t[t].setdefault(g, {})
+            grids = grids_by_t[key].setdefault(g, {})
             k = (wd, h)
             grids[k] = grids.get(k, 0) + n
-            totals[t][g] = totals[t].get(g, 0) + n
-    order = sorted(totals[-60], key=lambda g: -totals[-60][g])
+            totals[key][g] = totals[key].get(g, 0) + n
+    order = sorted(totals["all"], key=lambda g: -totals["all"][g])
     thresholds = {
-        str(t): {
+        key: {
             g: [[wd, h, round(n / coverage.get(wd, 1), 1)]
                 for (wd, h), n in sorted(v.items())]
-            for g, v in grids_by_t[t].items()
+            for g, v in grids_by_t[key].items()
         }
-        for t in WEEKDAY_THRESHOLDS
+        for key in grids_by_t
     }
-    return {"groups": order, "thresholds": thresholds}
+    # noise load per group: episodes x loudness accumulated over 3 weeks
+    load_rows = q(
+        """
+        SELECT CAST(strftime('%w', ts, 'unixepoch', 'localtime') AS INTEGER),
+               CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
+               event, ROUND(SUM(ABS(COALESCE(spl, -60))), 1)
+        FROM events
+        WHERE ts >= strftime('%s', 'now') - 21 * 86400
+        GROUP BY 1, 2, 3
+        """
+    )
+    load = {}
+    for wd, h, ev, v in load_rows:
+        g = group_of(ev)
+        if g in EXCLUDED_GROUPS:
+            continue
+        ld = load.setdefault(g, {})
+        k = (wd, h)
+        ld[k] = ld.get(k, 0) + v
+    load_payload = {
+        g: [[wd, h, round(v, 1)] for (wd, h), v in sorted(l.items())]
+        for g, l in load.items()
+    }
+    return {"groups": order, "thresholds": thresholds, "load": load_payload}
 
 
 def weekday_recalculator(stop):
@@ -576,6 +647,22 @@ def weekday_recalculator(stop):
 def api_weekday():
     with _weekday_lock:
         return WEEKDAY_CACHE["payload"]
+
+
+@app.get("/api/longest")
+def api_longest(
+    from_: float = Query(alias="from"),
+    to: float = Query(...),
+    limit: int = Query(default=50000, le=50000),
+):
+    """Episodes with known duration in the window, longest first."""
+    rows = q(
+        "SELECT ts, event, duration, spl FROM events "
+        "WHERE ts BETWEEN ? AND ? AND duration IS NOT NULL "
+        "ORDER BY duration DESC LIMIT ?",
+        (from_, to, limit),
+    )
+    return {"rows": [[r[0], r[1], r[2], r[3]] for r in rows]}
 
 
 LOUD_EDGES = [-60, -55, -50, -45, -40, -35, -30, -25]  # 5 dB buckets, from -60

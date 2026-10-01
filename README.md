@@ -18,7 +18,7 @@ events and levels (privacy).
 |---|---|
 | Machine | Raspberry Pi, Debian 13 (trixie), ARM64, kernel `6.18.39+rpt-rpi-v8` |
 | CPU / RAM | 4 cores, 7.6 GiB RAM, ~48 GiB free on SD card |
-| Microphone | Delock condenser omnidirectional mic (USB), **not yet plugged in / not detected** |
+| Microphone | Delock condenser omnidirectional mic (USB), plugged in and live (ALSA card `M20672`) |
 | Pi audio out | 2× HDMI playback only (`/dev/snd` has no capture device yet) |
 
 ## Architecture
@@ -76,14 +76,20 @@ logs/events.jsonl  (one JSON object per line, logrotate-friendly)
       NOTE: plugging a device after container start requires
       `docker compose restart analyzer` to be seen.
 - [x] **Dashboard live**: `dashboard/` service (FastAPI + SQLite WAL index +
-      vendored ECharts, no CDN — fully offline) on `127.0.0.1:8080`.
+      vendored ECharts/ECharts-GL, no CDN — fully offline) on `127.0.0.1:8080`.
       Tails JSONL → `logs/dashboard.db` (offset/inode-tracked, survives
-      restarts & logrotate). Left-nav views: last 5 min (live strip with
-      event pills), Motors & Speech & Music (hour × day matrices + loudness
-      distribution), Events (group counts), Weekday (hour × weekday heatmap).
-      Classes are grouped city-relevant (Motor, Human, Birds, …); a
-      configurable blocklist (`EVENT_BLOCKLIST`) never logs impossible /
-      noise-floor classes.
+      restarts & logrotate). Left-nav views (all counting EPISODES):
+      Readme (in-app guide), Last 5 min (live strip, pills on the line,
+      light background bands by loudness range), Loudness (30d) (groups ×
+      1 dB buckets, stacked blue/yellow/red by band), 3D (7d) (dot cloud:
+      hour × weekday × avg loudness), Weekday (4w) (nested green/yellow/red
+      cells, weekday-averaged), Loudest (3w) + Longest (3w) (full episode
+      tables, night rows tinted). Sidebar filters: 22-06h toggle (night
+      hours only) and a "Louder than" threshold affecting the 3D color
+      split and the Weekday grids. Classes are grouped city-relevant
+      (Human incl. animals, Motor, Music, Other); a configurable blocklist
+      (`EVENT_BLOCKLIST`) never logs impossible / noise-floor classes
+      (livestock, owls, whales, artillery, Silence, White noise, …).
       Verified end-to-end: all `/api/*` endpoints + static assets 200.
 
 ## Layout
@@ -106,8 +112,9 @@ docker compose up -d        # all four services
 docker compose logs -f analyzer
 
 # Dashboard: http://localhost:8080 (localhost only; expose via cloudflared
-# or SSH forward if needed). Views: live SPL, zoomable history, event
-# timeline + counts, hour×weekday heatmap, daily summary reader.
+# or SSH forward if needed). Views: Last 5 min (live), Loudness (30d),
+# 3D (7d), Weekday (4w), Loudest (3w), Longest (3w), Readme (in-app guide).
+# Sidebar filters: 22-06h (night hours only) + "Louder than" threshold.
 
 # Smoke test without mic (file mode):
 # generate a 16 kHz mono 16-bit WAV into logs/, then:
@@ -125,9 +132,12 @@ docker exec noise-ollama ollama run llama3.2:3b
 
 - `spl.jsonl` (1/s): `{"ts", "spl_db", "spl_db_min", "spl_db_max",
   "bands": {"low","mid","high"}}` — dBFS(A), uncalibrated
-- `events.jsonl` (episodes only, ≥0.3 confidence, one event per acoustic
-  episode — `EPISODE_REFRACTORY` 10 s default; strongest class wins, nested
-  categories are skipped): `{"ts", "event", "confidence", "spl_db"}`
+- `events.jsonl` (episodes only: one record per acoustic episode, written
+  when the episode ends after `EPISODE_QUIET` 2 s of quiet — type/conf/SPL
+  from its loudest moment, `duration_s` = how long it lasted, capped by
+  `EPISODE_MAX` 120 s; new episodes start ≥ `EPISODE_REFRACTORY` 10 s after
+  the previous one; nested AudioSet categories and blocklisted classes are
+  skipped): `{"ts", "event", "confidence", "spl_db", "duration_s"}`
 - `summaries/summary-<date>.md` + `summaries.jsonl` (daily, 07:00 UTC by
   default; UTC day boundaries; skipped if no data)
 
@@ -135,8 +145,10 @@ Tuning via `.env` (copy from `.env.example`): `EVENT_THRESHOLD`,
 `EVENT_REFRACTORY`, `EVENT_BLOCKLIST` (`;`-separated AudioSet class names the
 analyzer never logs and the dashboard never indexes — used to silence
 false positives that are impossible in central Zurich: livestock, poultry,
-owls, whales, artillery, office sounds, …), `SPL_INTERVAL`, `ALSA_DEVICE`
-(use `plughw:CARD=<n>,DEV=0` if `default` picks wrong device),
+owls, whales, artillery, office sounds, Silence, White noise, …),
+`EPISODE_REFRACTORY` (min gap between episodes), `EPISODE_QUIET` (silence
+that ends an episode), `EPISODE_MAX` (force-log cap), `SPL_INTERVAL`,
+`ALSA_DEVICE` (use `plughw:CARD=<n>,DEV=0` if `default` picks wrong device),
 `OLLAMA_MODEL`, `SUMMARY_HOUR`, `TZ` (also drives the dashboard heatmap's
 hour-of-day), `DASH_INGEST_INTERVAL`.
 
