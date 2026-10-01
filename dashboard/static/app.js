@@ -116,7 +116,7 @@ async function loadLive() {
     silent: true,
     grid: { left: 86, right: 20, top: 48, bottom: 16 },
     xAxis: {
-      type: "value", min: 0, max: Math.log(36), position: "top", name: "dBFS(A)",
+      type: "value", min: 0, max: Math.log(36), position: "top", name: "dB",
       nameLocation: "middle", nameGap: 28,
       axisLabel: { show: false }, axisTick: { show: false },
       splitLine: { show: false },
@@ -217,7 +217,7 @@ async function loadClassDist() {
     yAxis: { type: "category", data: labels, inverse: true,
              axisLabel: { color: "#57606a" } },
     series: [{ type: "custom", encode: { x: 0, y: 1 }, data,
-               renderItem: fillCellsRender(maxN, true, "none") }],
+               renderItem: fillCellsRender(maxN, false, "none") }],
   });
 }
 
