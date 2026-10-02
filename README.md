@@ -37,7 +37,9 @@ Analysis container  (python + numpy + tflite-runtime)
 logs/events.jsonl  (one JSON object per line, logrotate-friendly)
       │
       ├──► Dashboard container (FastAPI + SQLite index + ECharts UI, :8080)
-      └──► Ollama container (small LLM) → daily human-readable summaries
+      ├──► Ollama container (small LLM) → daily human-readable summaries
+      └──► rclone sync container → Cloudflare R2 (off-site backup,
+           events + summaries every 10 min, spl.jsonl hourly)
 ```
 
 ## Key decisions
@@ -51,7 +53,10 @@ logs/events.jsonl  (one JSON object per line, logrotate-friendly)
   stream/rotate; dashboards can tail it.
 - **Ollama is a summarizer, not a detector** — it only reads the JSONL log
   and produces natural-language daily summaries.
-- **Everything runs in containers** (analysis + Ollama).
+- **rclone → Cloudflare R2 for off-site backup** — S3-compatible, 10 GB
+  free tier, zero egress fees; snapshot-to-RAM-then-upload so each S3 PUT
+  is atomic and never races the writer; local files are never touched.
+- **Everything runs in containers** (analysis + Ollama + sync).
 
 ## Current status
 
@@ -75,6 +80,16 @@ logs/events.jsonl  (one JSON object per line, logrotate-friendly)
       (`default` does not work in the container: no capture slave).
       NOTE: plugging a device after container start requires
       `docker compose restart analyzer` to be seen.
+- [x] **Off-site log backup live**: `sync` service (rclone → Cloudflare R2
+      bucket `noise-logs`, account endpoint
+      `50d3b87516ef9b2d3927ec87322807df.r2.cloudflarestorage.com`).
+      Pushes `events.jsonl` + `summaries/` every 10 min, `spl.jsonl`
+      hourly. S3 keys live in `.rclone/rclone.conf` (chmod 600,
+      **gitignored** — never commit keys). Not uploaded: `dashboard.db*`
+      (derived index, rebuilds from JSONL).
+- [x] **Source on GitHub**: private repo `hostcenter/noise-analysis`
+      (pushed via `gh` CLI, HTTPS). `logs/`, `.env`, `.rclone/` are
+      gitignored, so no data or keys leave the machine.
 - [x] **Dashboard live**: `dashboard/` service (FastAPI + SQLite WAL index +
       vendored ECharts/ECharts-GL, no CDN — fully offline) on `127.0.0.1:8080`.
       Tails JSONL → `logs/dashboard.db` (offset/inode-tracked, survives
@@ -102,13 +117,16 @@ models/      yamnet.tflite + yamnet_class_map.csv (521 classes)
 logs/        spl.jsonl, events.jsonl, summaries/, dashboard.db
              (bind-mounted to /data/logs; dashboard.db is a derived,
              disposable index — delete it any time, it rebuilds from JSONL)
+.rclone/     rclone.conf with R2 S3 keys (gitignored — never commit)
 ```
 
 ## Running
 
 ```bash
+git clone https://github.com/hostcenter/noise-analysis.git   # fresh machine
 cd ~/noise-analysis
-docker compose up -d        # all four services
+docker compose up -d        # all five services (analyzer, ollama,
+                            # summarizer, dashboard, sync)
 docker compose logs -f analyzer
 
 # Dashboard: http://localhost:8080 (localhost only; expose via cloudflared
@@ -127,6 +145,35 @@ docker compose run --rm -e RUN_ONCE=1 -e SUMMARY_DATE=2026-09-01 summarizer
 # Ollama directly:
 docker exec noise-ollama ollama run llama3.2:3b
 ```
+
+## Off-site backup (R2)
+
+The `sync` service (rclone) pushes `logs/` to a private Cloudflare R2
+bucket — S3-compatible, zero egress, 10 GB free tier (more than enough
+at ~15 MB/day; revisit when `spl.jsonl` approaches it — rotate daily and
+upload segments once, the dashboard survives logrotate).
+
+- Schedule: `events.jsonl` + `summaries/` every 10 min; `spl.jsonl` hourly.
+- Each cycle snapshots files to container tmpfs first, so S3 PUTs are
+  atomic (bucket never holds a partial file) and nothing touches the SD
+  card; local logs are opened read-only and never modified.
+- `dashboard.db*` is never uploaded (derived, changes constantly).
+
+Setup (one-time per machine):
+
+```bash
+# Cloudflare dashboard → R2 → create bucket 'noise-logs' →
+# Manage R2 API Tokens → create token (Object Read & Write, this bucket),
+# then fill the two keys:
+vi .rclone/rclone.conf          # access_key_id + secret_access_key
+chmod 600 .rclone/rclone.conf   # already gitignored
+docker compose up -d sync
+docker exec noise-sync rclone ls r2:noise-logs    # verify objects appear
+```
+
+Restore on a new machine: `rclone copy r2:noise-logs logs/` (or download
+from the dashboard), remove any `dashboard.db*`, start the dashboard —
+it re-ingests everything from the JSONL.
 
 ## Log formats
 

@@ -67,5 +67,30 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
 
+  sync:
+    image: rclone/rclone:latest
+    container_name: noise-sync
+    restart: unless-stopped
+    tmpfs:
+      - /tmp:size=256m
+    volumes:
+      - ./logs:/data/logs:ro
+      - ./.rclone:/config/rclone
+    entrypoint: >
+      sh -c 'i=0;
+      while true; do
+        mkdir -p /tmp/push/summaries;
+        cp /data/logs/events.jsonl /tmp/push/ 2>/dev/null;
+        cp -r /data/logs/summaries/. /tmp/push/summaries/ 2>/dev/null;
+        rclone copy /tmp/push r2:noise-logs;
+        i=$$(( (i + 1) % 6 ));
+        if [ "$$i" -eq 1 ]; then
+          cp /data/logs/spl.jsonl /tmp/push/;
+          rclone copyto /tmp/push/spl.jsonl r2:noise-logs/spl.jsonl;
+          rm -f /tmp/push/spl.jsonl;
+        fi;
+        sleep 600;
+      done'
+
 volumes:
   ollama:

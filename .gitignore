@@ -1,5 +1,6 @@
 logs/
 .env
+.rclone/
 __pycache__/
 *.pyc
 *.db
