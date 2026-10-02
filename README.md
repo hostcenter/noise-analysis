@@ -2,7 +2,7 @@
 
 Continuous monitoring of city sounds outside a window (cars, motorbikes,
 leaf blowers, music, people talking/passing by), with event detection,
-SPL logging, and optional LLM-generated daily summaries.
+SPL logging, and derived events/levels only (no raw audio; privacy).
 
 ## Why this exists
 
@@ -37,9 +37,8 @@ Analysis container  (python + numpy + tflite-runtime)
 logs/events.jsonl  (one JSON object per line, logrotate-friendly)
       │
       ├──► Dashboard container (FastAPI + SQLite index + ECharts UI, :8080)
-      ├──► Ollama container (small LLM) → daily human-readable summaries
       └──► rclone sync container → Cloudflare R2 (off-site backup,
-           events + summaries every 10 min, spl.jsonl hourly)
+           full log set pushed hourly)
 ```
 
 ## Key decisions
@@ -51,12 +50,13 @@ logs/events.jsonl  (one JSON object per line, logrotate-friendly)
   PANNs CNN14 is more accurate but too heavy without quantization.
 - **JSONL** logging (not SQLite) — one JSON event per line, easy to
   stream/rotate; dashboards can tail it.
-- **Ollama is a summarizer, not a detector** — it only reads the JSONL log
-  and produces natural-language daily summaries.
 - **rclone → Cloudflare R2 for off-site backup** — S3-compatible, 10 GB
   free tier, zero egress fees; snapshot-to-RAM-then-upload so each S3 PUT
   is atomic and never races the writer; local files are never touched.
-- **Everything runs in containers** (analysis + Ollama + sync).
+- **Everything runs in containers** (analysis + sync).
+- **LLM daily summaries removed** (2026-10-02) — Ollama + summarizer
+  service dropped; the dashboards/views carry the insight, and the
+  per-day .md files never earned their 2 GB of RAM.
 
 ## Current status
 
@@ -68,10 +68,8 @@ logs/events.jsonl  (one JSON object per line, logrotate-friendly)
       `niobures/YAMNet` → `yamnet/lite-model_yamnet_classification_tflite_1.tflite`
       (input is 1-D float32 `[15600]`, handled rank-agnostically in code)
 - [x] Analysis script + analyzer image (`analysis/`)
-- [x] docker-compose.yml: analyzer + ollama + summarizer
-- [x] Ollama running with `llama3.2:3b` pulled (2.0 GB)
-- [x] Summarizer service + smoke test passed (writes
-      `logs/summaries/summary-<date>.md` + `logs/summaries.jsonl`)
+- [x] docker-compose.yml: analyzer + dashboard + sync
+      (LLM summarizer removed 2026-10-02, see Key decisions)
 - [x] Analyzer smoke test passed with synthetic WAV: events + SPL JSONL
       correct (synthetic noise → "White noise" 0.89; tone → "Whistle")
 - [x] **Mic plugged in and LIVE**: Delock 20672 (JMTek 0c76:0072), ALSA card
@@ -83,8 +81,8 @@ logs/events.jsonl  (one JSON object per line, logrotate-friendly)
 - [x] **Off-site log backup live**: `sync` service (rclone → Cloudflare R2
       bucket `noise-logs`, account endpoint
       `50d3b87516ef9b2d3927ec87322807df.r2.cloudflarestorage.com`).
-      Pushes `events.jsonl` + `summaries/` every 10 min, `spl.jsonl`
-      hourly. S3 keys live in `.rclone/rclone.conf` (chmod 600,
+      Pushes `events.jsonl` + `spl.jsonl` hourly. S3 keys live in
+      `.rclone/rclone.conf` (chmod 600,
       **gitignored** — never commit keys). Not uploaded: `dashboard.db*`
       (derived index, rebuilds from JSONL).
 - [x] **Source on GitHub**: private repo `hostcenter/noise-analysis`
@@ -111,10 +109,9 @@ logs/events.jsonl  (one JSON object per line, logrotate-friendly)
 
 ```
 analysis/    analyze.py + Dockerfile (capture → SPL + YAMNet → JSONL)
-summarizer/  summarize.py + Dockerfile (JSONL → Ollama → daily .md)
 dashboard/   dashboard.py + static/ + Dockerfile (JSONL → SQLite → web UI)
 models/      yamnet.tflite + yamnet_class_map.csv (521 classes)
-logs/        spl.jsonl, events.jsonl, summaries/, dashboard.db
+logs/        spl.jsonl, events.jsonl, dashboard.db
              (bind-mounted to /data/logs; dashboard.db is a derived,
              disposable index — delete it any time, it rebuilds from JSONL)
 .rclone/     rclone.conf with R2 S3 keys (gitignored — never commit)
@@ -122,38 +119,59 @@ logs/        spl.jsonl, events.jsonl, summaries/, dashboard.db
 
 ## Running
 
+The stack is toggled by `COMPOSE_PROFILES` in `.env` (compose profiles):
+
+- `full` — analyzer (mic) + sync (R2 backup) + dashboard — the recording
+  machine
+- unset/empty — dashboard only — a view-only machine displaying copied
+  logs (no mic, no backup)
+
 ```bash
 git clone https://github.com/hostcenter/noise-analysis.git   # fresh machine
 cd ~/noise-analysis
-docker compose up -d        # all five services (analyzer, ollama,
-                            # summarizer, dashboard, sync)
+cp .env.example .env          # recording machine: keep COMPOSE_PROFILES=full
+docker compose up -d          # all three services (analyzer, dashboard, sync)
 docker compose logs -f analyzer
 
 # Dashboard: http://localhost:8080 (localhost only; expose via cloudflared
 # or SSH forward if needed). Views: Last 5 min (live), Loudness (30d),
 # 3D (7d), Weekday (4w), Loudest (3w), Longest (3w), Readme (in-app guide).
 # Sidebar filters: 22-06h (night hours only) + "Louder than" threshold.
+# Sidebar footer: code Version (links to GitHub) + last Backup date.
 
 # Smoke test without mic (file mode):
 # generate a 16 kHz mono 16-bit WAV into logs/, then:
 docker compose run --rm -e SOURCE=file -e INPUT_FILE=/data/logs/test.wav analyzer
 rm logs/test.wav            # privacy: never keep audio files
-
-# Manual summary for a day:
-docker compose run --rm -e RUN_ONCE=1 -e SUMMARY_DATE=2026-09-01 summarizer
-
-# Ollama directly:
-docker exec noise-ollama ollama run llama3.2:3b
 ```
+
+### View-only machine (frontend)
+
+Display the recorded logs on a second machine (e.g. a media box) without
+mic or backup:
+
+```bash
+git clone https://github.com/hostcenter/noise-analysis.git && cd noise-analysis
+cp .env.example .env && sed -i '/^COMPOSE_PROFILES/d' .env   # dashboard only
+mkdir -p logs
+rclone copy r2:noise-logs logs/        # or rsync from the recording machine
+docker compose up -d dashboard
+```
+
+The dashboard rebuilds its index from the JSONL on first start. The
+sidebar "Backup" footer shows "—" here because backups only run on the
+recording machine (two writers would fight over the same R2 objects).
 
 ## Off-site backup (R2)
 
-The `sync` service (rclone) pushes `logs/` to a private Cloudflare R2
-bucket — S3-compatible, zero egress, 10 GB free tier (more than enough
+The `sync` service (runs only in the `full` profile) pushes `logs/` to a
+private Cloudflare R2 bucket — S3-compatible, zero egress, 10 GB free
+tier (more than enough
 at ~15 MB/day; revisit when `spl.jsonl` approaches it — rotate daily and
 upload segments once, the dashboard survives logrotate).
 
-- Schedule: `events.jsonl` + `summaries/` every 10 min; `spl.jsonl` hourly.
+- Schedule: `events.jsonl` + `spl.jsonl` are pushed once per hour; a
+  failed push is simply retried next hour.
 - Each cycle snapshots files to container tmpfs first, so S3 PUTs are
   atomic (bucket never holds a partial file) and nothing touches the SD
   card; local logs are opened read-only and never modified.
@@ -184,11 +202,11 @@ it re-ingests everything from the JSONL.
   from its loudest moment, `duration_s` = how long it lasted, capped by
   `EPISODE_MAX` 120 s; new episodes start ≥ `EPISODE_REFRACTORY` 10 s after
   the previous one; nested AudioSet categories and blocklisted classes are
-  skipped): `{"ts", "event", "confidence", "spl_db", "duration_s"}`
-- `summaries/summary-<date>.md` + `summaries.jsonl` (daily, 07:00 UTC by
-  default; UTC day boundaries; skipped if no data)
+   skipped): `{"ts", "event", "confidence", "spl_db", "duration_s"}`
 
-Tuning via `.env` (copy from `.env.example`): `EVENT_THRESHOLD`,
+Tuning via `.env` (copy from `.env.example`): `COMPOSE_PROFILES`
+(`full` = everything, unset = view-only dashboard; see Running),
+`EVENT_THRESHOLD`,
 `EVENT_REFRACTORY`, `EVENT_BLOCKLIST` (`;`-separated AudioSet class names the
 analyzer never logs and the dashboard never indexes — used to silence
 false positives that are impossible in central Zurich: livestock, poultry,
@@ -196,7 +214,7 @@ owls, whales, artillery, office sounds, Silence, White noise, …),
 `EPISODE_REFRACTORY` (min gap between episodes), `EPISODE_QUIET` (silence
 that ends an episode), `EPISODE_MAX` (force-log cap), `SPL_INTERVAL`,
 `ALSA_DEVICE` (use `plughw:CARD=<n>,DEV=0` if `default` picks wrong device),
-`OLLAMA_MODEL`, `SUMMARY_HOUR`, `TZ` (also drives the dashboard heatmap's
+`TZ` (also drives the dashboard heatmap's
 hour-of-day), `DASH_INGEST_INTERVAL`.
 
 ## Useful commands / notes
@@ -219,6 +237,3 @@ newgrp docker   # or log out/in
 - A-weighting: apply FFT weights for a decent SPL estimate; the mic is not
   calibrated, so treat dB values as relative until calibrated against a
   reference SPL meter.
-- Ollama ARM64 image: `ollama/ollama`; small models that fit in 8 GiB RAM
-  alongside the analyzer: `llama3.2:3b` or `qwen2.5:3b` (run one at a time,
-  the classifier is light but the Pi only has 8 GiB).
