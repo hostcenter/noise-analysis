@@ -17,7 +17,7 @@ import threading
 import time
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -31,7 +31,6 @@ EVENT_BLOCKLIST = {
 }
 PORT = int(os.environ.get("PORT", "8080"))
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -475,11 +474,11 @@ def api_loudest(
 ):
     """All episodes in the window, loudest first."""
     rows = q(
-        "SELECT ts, event, confidence, spl FROM events "
+        "SELECT ts, event, confidence, spl, duration FROM events "
         "WHERE ts BETWEEN :f AND :t AND spl IS NOT NULL ORDER BY spl DESC LIMIT ?",
         (from_, to, limit),
     )
-    return {"rows": [[r[0], r[1], r[2], r[3]] for r in rows]}
+    return {"rows": [[r[0], r[1], r[2], r[3], r[4]] for r in rows]}
 
 
 @app.get("/api/classdist")
@@ -691,27 +690,30 @@ def api_louddist(
     return {"rows": [[d, b, n] for (d, b), n in sorted(agg.items())]}
 
 
-@app.get("/api/summaries")
-def api_summaries():
-    d = os.path.join(LOG_DIR, "summaries")
-    out = []
-    if os.path.isdir(d):
-        for fn in sorted(os.listdir(d), reverse=True):
-            m = re.fullmatch(r"summary-(\d{4}-\d{2}-\d{2})\.md", fn)
-            if m:
-                out.append(m.group(1))
-    return {"dates": out}
+@app.get("/api/meta")
+def api_meta():
+    # sidebar footer: code version (stamped at image build) + date of the
+    # last successful off-site backup (epoch marker written by the sync
+    # service into the .rclone bind mount)
+    def read_text(path):
+        try:
+            with open(path) as f:
+                return f.read().strip()
+        except OSError:
+            return None
 
-
-@app.get("/api/summaries/{date}")
-def api_summary(date: str):
-    if not DATE_RE.match(date):
-        raise HTTPException(status_code=400, detail="bad date")
-    path = os.path.join(LOG_DIR, "summaries", f"summary-{date}.md")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="no such summary")
-    with open(path) as f:
-        return {"date": date, "markdown": f.read()}
+    version = read_text(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "version.txt"))
+    backup = None
+    raw = read_text(os.environ.get("BACKUP_STATE", "/backup-state")
+                    + "/last-backup")
+    if raw:
+        try:
+            backup = datetime.fromtimestamp(float(raw)).strftime(
+                "%d.%m.%Y - %H:%M")
+        except (ValueError, OSError, OverflowError):
+            backup = None
+    return {"version": version, "backup": backup}
 
 
 @app.exception_handler(sqlite3.Error)

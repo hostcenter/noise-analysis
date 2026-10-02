@@ -18,8 +18,16 @@
     width: 200px; flex: 0 0 200px; background: #ffffff;
     border-right: 1px solid #d0d7de; padding: 16px 10px;
     position: sticky; top: 0; height: 100vh;
+    display: flex; flex-direction: column;
   }
   aside h1 { font-size: 15px; font-weight: 600; margin: 0 8px 18px; }
+  #nav { flex: 1 0 auto; }
+  #meta-footer {
+    margin-top: auto; padding: 12px 8px 0; font-size: 11px; color: #57606a;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  #meta-footer a { color: #57606a; text-decoration: none; }
+  #meta-footer a:hover { color: #0969da; text-decoration: underline; }
   .nav-item {
     display: block; width: 100%; text-align: left; margin-bottom: 4px;
     padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer;
@@ -30,11 +38,6 @@
   .nav-item .tag {
     float: right; font-size: 9px; padding: 1px 5px; border-radius: 8px;
     margin-left: 4px; background: #eaeef2; color: #57606a; font-weight: 400;
-  }
-  .nav-item .tag.hrs { background: #f3e8ff; color: #6b21a8; }   /* 22-06h active: light violet */
-  .nav-item .tag.hrs.off {
-    background: #e7f0fe; color: #0969da;   /* 00-24h active: light blue */
-    opacity: 1; text-decoration: none;
   }
   .nav-item .tag.thr { background: #fff3bf; color: #8a6d00; }            /* default */
   .nav-item .tag.thr.thr-blue { background: #e3f7e8; color: #1a7f37; }   /* >-60 */
@@ -55,12 +58,6 @@
     position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0;
   }
   /* base colors per option */
-  label.pill-radio:has(input[name="hours-mode"][value="all"]) {
-    background: #e7f0fe; color: #0969da;
-  }
-  label.pill-radio:has(input[name="hours-mode"][value="night"]) {
-    background: #f3e8ff; color: #6b21a8;
-  }
   label.pill-radio:has(input[name="loud-db"][value="-60"]) {
     background: #e3f7e8; color: #1a7f37;
   }
@@ -71,12 +68,6 @@
     background: #ffebe9; color: #a40e26;
   }
   /* selected: bold + thick border in the strong tone */
-  label.pill-radio:has(input[name="hours-mode"][value="all"]:checked) {
-    font-weight: 700; border-color: #24292f;
-  }
-  label.pill-radio:has(input[name="hours-mode"][value="night"]:checked) {
-    font-weight: 700; border-color: #24292f;
-  }
   label.pill-radio:has(input[name="loud-db"][value="-60"]:checked) {
     font-weight: 700; border-color: #24292f;
   }
@@ -130,15 +121,6 @@
   #loud-table thead th { color: #656d76; font-weight: 600; border-bottom: 1px solid #d0d7de; }
   #loud-table tbody tr + tr td { border-top: 1px solid #eaeef2; }
 
-
-  #long-table {
-    border-collapse: separate; border-spacing: 0; font-size: 13px;
-    min-width: 560px; background: #ffffff; border: 1px solid #d0d7de;
-    border-radius: 8px; overflow: hidden;
-  }
-  #long-table th, #long-table td { text-align: left; padding: 5px 14px; }
-  #long-table thead th { color: #656d76; font-weight: 600; border-bottom: 1px solid #d0d7de; }
-  #long-table tbody tr + tr td { border-top: 1px solid #eaeef2; }
   .hint { color: #656d76; font-size: 12px; }
 
   /* narrow screens: nav collapses to a top row */
@@ -151,6 +133,7 @@
     }
     aside h1 { margin: 0 10px 0 4px; }
     .nav-item { width: auto; margin-bottom: 0; }
+    #meta-footer { flex-basis: 100%; flex-direction: row; gap: 12px; }
   }
 </style>
 </head>
@@ -160,21 +143,18 @@
   <nav id="nav">
     <button class="nav-item" data-view="readme">Readme</button>
     <button class="nav-item active" data-view="live">Last 5 min</button>
-    <button class="nav-item" data-view="events">Loudness (30d)</button>
+    <button class="nav-item" data-view="heatmap">Weekday (3w)</button>
+    <button class="nav-item" data-view="day3w">Daily (3w)</button>
+    <button class="nav-item" data-view="loudveh">Loud Vehicles (3w)</button>
+    <button class="nav-item" data-view="loudest">Loudest (3w)</button>
+    <button class="nav-item" data-view="events">Loudness (3w)</button>
     <button class="nav-item" data-view="threed">3D (7d)</button>
-    <div class="pill-group" style="flex-direction:row;align-items:center">
-      <label class="pill-radio">
-        <input type="radio" name="hours-mode" value="all" checked> 00-24h
-      </label>
-      <label class="pill-radio">
-        <input type="radio" name="hours-mode" value="night"> 22-06h
-      </label>
-    </div>
-    <button class="nav-item" data-view="day3w">Daily (3w) <span class="tag hrs">22-06</span></button>
-    <button class="nav-item" data-view="heatmap">Weekday (3w) <span class="tag hrs">22-06</span></button>
-    <button class="nav-item" data-view="loudest">Loudest (3w) <span class="tag hrs">22-06</span></button>
-    <button class="nav-item" data-view="longest">Longest (3w) <span class="tag hrs">22-06</span></button>
   </nav>
+  <div id="meta-footer">
+    <a id="meta-version" href="https://github.com/hostcenter/noise-analysis"
+       target="_blank" rel="noopener">Version —</a>
+    <span id="meta-backup">Backup —</span>
+  </div>
 </aside>
 
 <div class="content">
@@ -183,18 +163,6 @@
       <h2>Last 5 Minutes</h2>
       <div class="hint" style="margin-bottom:8px">Peak loudness and detected events · auto-refreshes every 5 s</div>
       <div id="live" class="chart"></div>
-    </section>
-
-    <section id="view-events" hidden>
-      <h2>Loudness distribution per noise type</h2>
-      <div id="classdist" class="chart" style="height:340px"></div>
-      <div class="hint">Event counts per 1 dB bucket (−60…−30) and group, whole recording period · sorted by row sum · fill level = count.</div>
-    </section>
-
-    <section id="view-threed" hidden>
-      <h2>By weekday × hour (last 7 days)</h2>
-      <div id="dist3d" class="chart"></div>
-      <div class="hint">Dot cloud: group × weekday × hour of day · dot size and color = event count · last 7 days · drag to rotate.</div>
     </section>
 
     <section id="view-heatmap" hidden>
@@ -209,26 +177,33 @@
       <div class="hint">One grid per group · episodes per hour of day, one row per day · raw counts, no averaging · last 3 weeks · stacked blue/red by the selected threshold.</div>
     </section>
 
-                <section id="view-loudest" hidden>
+    <section id="view-loudveh" hidden>
+      <h2>Loud Vehicles (3w)</h2>
+      <div id="loudveh-chart" class="chart"></div>
+      <div class="hint">One grid for the Motor group, like Daily · only loud (yellow) and very loud (red) episodes shown · number = such episodes in that hour · last 3 weeks.</div>
+    </section>
+
+    <section id="view-loudest" hidden>
       <h2>Loudest (3w)</h2>
       <table id="loud-table">
         <thead>
-          <tr><th>Weekday</th><th>Date</th><th>Time</th><th>Noise type</th><th>dB</th></tr>
+          <tr><th>dB</th><th>Duration</th><th>Noise type</th><th>Weekday</th><th>Time</th><th>Date</th></tr>
         </thead>
         <tbody id="loud-body"></tbody>
       </table>
       <div class="hint">Loudest 300 episodes of the last three weeks · times as hour only (24 h) · rows at 22-06h highlighted red.</div>
     </section>
 
-    <section id="view-longest" hidden>
-      <h2>Longest (3w)</h2>
-      <table id="long-table">
-        <thead>
-          <tr><th>Weekday</th><th>Date</th><th>Time</th><th>Noise type</th><th>Duration</th><th>Peak dB</th></tr>
-        </thead>
-        <tbody id="long-body"></tbody>
-      </table>
-      <div class="hint">Longest 300 episodes of the last three weeks · rows at 22-06h highlighted red.</div>
+    <section id="view-events" hidden>
+      <h2>Loudness distribution</h2>
+      <div id="classdist" class="chart" style="height:540px"></div>
+      <div class="hint">Event counts per 1 dB bucket, all noise types pooled · violet 22–06, green = 07-21 · fill level = count.</div>
+    </section>
+
+    <section id="view-threed" hidden>
+      <h2>By weekday × hour (last 7 days)</h2>
+      <div id="dist3d" class="chart"></div>
+      <div class="hint">Dot cloud: group × weekday × hour of day · dot size and color = event count · last 7 days · drag to rotate.</div>
     </section>
 
     <section id="view-readme" hidden>
@@ -260,12 +235,13 @@
               their loudness. The background is tinted by loudness range:
               green = audible, yellow = loud, red = very loud.</td>
               <td>"What is happening right now?"</td></tr>
-          <tr><td><b>Loudness (30d)</b></td><td>A grid: sound families as
-              columns, 1-dB loudness steps as rows (loudest on top). The
-              colored bar in each cell shows how many episodes fell into
-              that loudness range — blue = audible, orange = loud,
-              red = very loud.</td>
-              <td>"How loud is my street, and which family dominates?"</td></tr>
+          <tr><td><b>Loudness (3w)</b></td><td>A grid: 1-dB loudness steps
+              as rows (loudest on top), all noise types pooled. The bar in
+              each row grows from left to right with the episode count —
+              violet = night (22–06), green = day. The light background
+              tints each row by loudness range: green = audible,
+              yellow = loud, red = very loud.</td>
+              <td>"How loud is my street?"</td></tr>
           <tr><td><b>3D (7d)</b></td><td>A floating dot cloud over hour of
               day, weekday, and loudness. Dot size = how many episodes,
               color = loud (red) or quieter (blue).</td>
@@ -278,13 +254,10 @@
               light violet, day columns light green.</td>
               <td>"What does a typical week look like for each family?"</td></tr>
           <tr><td><b>Loudest (3w)</b></td><td>Every episode of the last
-              three weeks, loudest first — weekday, date, time, type, and
-              peak loudness (cell tinted by loudness range). Night rows
-              (22:00–06:59) have a violet time cell.</td>
+              three weeks, loudest first — loudness, duration, type,
+              weekday, time, and date (cells tinted by loudness range).
+              Night rows (22:00–06:59) have a violet time cell.</td>
               <td>"What were the biggest noises recently?"</td></tr>
-          <tr><td><b>Longest (3w)</b></td><td>Same list, but ranked by how
-              long each episode lasted.</td>
-              <td>"What drags on the longest?"</td></tr>
         </table>
 
         <h3>Sidebar filters</h3>
@@ -339,6 +312,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=230"></script>
+<script src="/app.js?v=231"></script>
 </body>
 </html>

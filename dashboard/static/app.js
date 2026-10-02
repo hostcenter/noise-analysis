@@ -5,10 +5,8 @@ const DB_OFFSET = 106.6;  // calibration: dB SPL ≈ dBFS + offset (phone SPL me
 const THRESH_LOUD = 62;   // dB SPL: green audible up to here
 const THRESH_VERY = 67;   // dB SPL: yellow loud up to here, red very loud above
 const state = { dataMin: null, groupMembers: {}, weekdayPayload: null, weekdayFetchedAt: 0,
-                nightOnly: false, loudDb: -45 };
-const NIGHT_HOURS = [22, 23, 0, 1, 2, 3, 4, 5, 6];
-const hourCols = () => state.nightOnly ? NIGHT_HOURS
-  : Array.from({ length: 24 }, (_, i) => i);
+                loudDb: -45 };
+const hourCols = () => Array.from({ length: 24 }, (_, i) => i);
 
 /* group raw AudioSet classes into city-relevant families (prefix match on
    word boundaries; order matters — first hit wins) */
@@ -179,45 +177,37 @@ async function loadCounts() {
 
 async function loadClassDist() {
   const to = Date.now() / 1000;
-  const d = await get("/api/classdist", { from: to - 30 * 86400, to });
-  // rows: [event, bucket(-60..-31 dBFS), count] → aggregate into groups
-  const colsDbfs = Array.from({ length: 30 }, (_, i) => -60 + i);       // internal keys
-  const colLabels = colsDbfs.map(b => String(Math.round(b + DB_OFFSET)) + " dB");
-  const byGroup = new Map();
+  const d = await get("/api/classdist", { from: to - 21 * 86400, to });
+  // rows: [event, bucket(-60..-31 dBFS), night, day] → pool all noise types
+  const rowsDbfs = Array.from({ length: 28 }, (_, i) => -60 + i);       // -60..-31 → 47..76 dB
+  const rowLabels = rowsDbfs.map(b => String(Math.round(b + DB_OFFSET)) + " dB");
+  const byBucket = new Map();
   for (const [ev, b, night, day] of d.rows) {
-    const g = groupOf(ev);
-    if (EXCLUDED_GROUPS.has(g)) continue;
-    if (!byGroup.has(g)) byGroup.set(g, new Map());
-    const m = byGroup.get(g);
-    const cur = m.get(b) || [0, 0];
+    if (EXCLUDED_GROUPS.has(groupOf(ev))) continue;
+    const cur = byBucket.get(b) || [0, 0];
     cur[0] += night; cur[1] += day;
-    m.set(b, cur);
+    byBucket.set(b, cur);
   }
-  const sumOf = g => [...byGroup.get(g).values()].reduce((s, x) => s + x[0] + x[1], 0);
-  const labels = [...byGroup.keys()].sort((a, b2) => sumOf(b2) - sumOf(a));
   const data = [];
   let maxN = 1;
-  labels.forEach((g, yi) => {
-    const m = byGroup.get(g);
-    colsDbfs.forEach((b, xi) => {
-      const [night, day] = m.get(b) ?? [0, 0];
-      maxN = Math.max(maxN, night + day);
-      // stacked: violet night below, green day on top
-      data.push([xi, yi, night, day, "#6b21a8", "#1a7f37"]);
-    });
+  rowsDbfs.forEach((b, yi) => {
+    const [night, day] = byBucket.get(b) ?? [0, 0];
+    maxN = Math.max(maxN, night + day);
+    // stacked: violet night below, green day on top; 7th slot = bucket dBFS
+    data.push([0, yi, night, day, "#6b21a8", "#1a7f37", b]);
   });
   mkChart("classdist").setOption({
     animation: false,
-    grid: { left: 180, right: 16, top: 34, bottom: 16 },
+    grid: { left: 48, right: 16, top: 16, bottom: 28 },
     tooltip: { formatter: p =>
-      `${labels[p.value[1]]}, ${colLabels[p.value[0]]} dB<br>` +
-      `<b>${p.value[2]}</b> events` },
-    xAxis: { type: "category", data: colLabels, position: "top",
-             axisLabel: { color: "#57606a", fontSize: 10 } },
-    yAxis: { type: "category", data: labels, inverse: true,
+      `${rowLabels[p.value[1]]}<br>` +
+      `<b>${p.value[2] + p.value[3]}</b> events · ${p.value[2]} night / ${p.value[3]} day` },
+    xAxis: { type: "category", data: ["All events"],
              axisLabel: { color: "#57606a" } },
+    yAxis: { type: "category", data: rowLabels,
+             axisLabel: { color: "#57606a", fontSize: 10 } },
     series: [{ type: "custom", encode: { x: 0, y: 1 }, data,
-               renderItem: fillCellsRender(maxN, false, "none") }],
+               renderItem: fillCellsRender(maxN, false, "loudness-bands") }],
   });
 }
 
@@ -238,39 +228,19 @@ async function loadLoudList() {
     ? d.rows.map(r => {
         const dt = new Date(r[0] * 1000);
         const h24 = dt.getHours();
-        if (state.nightOnly && !(h24 >= 22 || h24 <= 6)) return "";
         const night = h24 >= 22 || h24 <= 6;  // 22:00–06:59
         const h = String(h24).padStart(2, "0") + "h";
         const dbBg = r[3] >= -40 ? "#ffebe9" : r[3] >= -45 ? "#fff3bf" : "#e7f0fe";
         const timeBg = night ? "#f3e8ff" : "#e3f7e8";
+        const dur = r[4] == null ? "—" : `${r[4].toFixed(1)} s`;
         return `<tr${night ? ' class="night"' : ""}>` +
+               `<td style="background:${dbBg}">${(r[3] + DB_OFFSET).toFixed(1)}</td>` +
+               `<td>${dur}</td><td>${r[1]}</td>` +
                `<td>${WDAYS[dt.getDay()]}</td>` +
-               `<td>${fmtDate(r[0] * 1000)}</td>` +
-               `<td style="background:${timeBg}">${h}</td><td>${r[1]}</td>` +
-               `<td style="background:${dbBg}">${(r[3] + DB_OFFSET).toFixed(1)}</td></tr>`;
+               `<td style="background:${timeBg}">${h}</td>` +
+               `<td>${fmtDate(r[0] * 1000)}</td></tr>`;
       }).join("")
-    : "<tr><td colspan='5'>none yet — nothing louder than −40 dB recorded</td></tr>";
-}
-
-async function loadLongest() {
-  const to = Date.now() / 1000;
-  const d = await get("/api/longest", { from: to - 21 * 86400, to, limit: 300 });
-  document.getElementById("long-body").innerHTML = d.rows.length
-    ? d.rows.map(r => {
-        const dt = new Date(r[0] * 1000);
-        if (state.nightOnly && !(dt.getHours() >= 22 || dt.getHours() <= 6)) return "";
-        const night = dt.getHours() >= 22 || dt.getHours() <= 6;
-        const col = r[3] >= -40 ? "#ffebe9" : r[3] >= -45 ? "#fff3bf" : "#e7f0fe";
-        const timeBg = night ? "#f3e8ff" : "#e3f7e8";
-        const h = String(dt.getHours()).padStart(2, "0") + "h";
-        return `<tr${night ? ' class="night"' : ""}>` +
-               `<td>${WDAYS[dt.getDay()]}</td>` +
-               `<td>${fmtDate(r[0] * 1000)}</td>` +
-               `<td style="background:${timeBg}">${h}</td><td>${r[1]}</td>` +
-               `<td>${r[2].toFixed(1)} s</td>` +
-               `<td style="background:${col}">${(r[3] + DB_OFFSET).toFixed(1)}</td></tr>`;
-      }).join("")
-    : "<tr><td colspan='6'>none yet — no episodes of 10 s or longer recorded</td></tr>";
+    : "<tr><td colspan='6'>none yet — nothing louder than −40 dB recorded</td></tr>";
 }
 
 const dist3dState = { data: [], info: new Map(), zMin: 40, zMax: 80 };
@@ -340,6 +310,8 @@ async function loadDist3D() {
   dist3dState.days = days;
   dist3dState.hours = zHours.map(h => String(h).padStart(2, "0"));
   dist3dState.dayDate = dayDate;
+  dist3dState.nowWd = nowWd;
+  dist3dState.nowH = nowH;
   applyDist3D();
 }
 
@@ -349,6 +321,12 @@ function applyDist3D() {
     ? { ...dot, symbolSize: dot.baseSize * 1.8,
         itemStyle: { color: dot.itemStyle.color, opacity: 1 } }
     : dot);
+  // black path through the dots of the current weekday at the current hour
+  const nowLine = data
+    .filter(dot => dot.value[0] === dist3dState.nowH &&
+                   dot.value[1] === dist3dState.nowWd)
+    .sort((a, b) => a.value[2] - b.value[2])
+    .map(dot => dot.value.slice(0, 3));
   mkChart("dist3d").setOption({
     animation: false,
     tooltip: {
@@ -380,10 +358,12 @@ function applyDist3D() {
       splitLine: { lineStyle: { color: "#eaeef2" } },
       light: { main: { intensity: 1.2 }, ambient: { intensity: 0.4 } },
     },
-    series: [{
-      type: "scatter3D", data: styled,
-      emphasis: { itemStyle: { opacity: 1 } },
-    }],
+    series: [
+      { type: "scatter3D", data: styled,
+        emphasis: { itemStyle: { opacity: 1 } } },
+      { type: "line3D", data: nowLine, silent: true,
+        lineStyle: { color: "#24292f", width: 2, opacity: 0.9 } },
+    ],
   }, { notMerge: true });
 }
 
@@ -391,7 +371,7 @@ function hexToRgb(hex) {
   return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 }
 const VIOLET_STOPS = ["#f6effc", "#d8b4fe", "#a855f7", "#6b21a8"].map(hexToRgb);
-const BLUE_STOPS = ["#eaf1fb", "#9ec5fe", "#2f6feb", "#0550ae"].map(hexToRgb);
+const GREEN_STOPS = ["#e3f7e8", "#8ce99a", "#2f9e44", "#1a7f37"].map(hexToRgb);
 
 function disposeChartsIn(container) {
   container.querySelectorAll(".chart").forEach(el => {
@@ -408,7 +388,7 @@ function stopWeekdayCycle() {
 }
 
 // noise-load grid: cell color = accumulated episodes x loudness over the
-// last 3 weeks; violet scale for night columns (22-06), blue for day (07-22)
+// last 3 weeks; violet scale for night columns (22-06), green for day (07-22)
 function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
   // bg "hours-violet": night columns 22-06 light violet, day 07-22 light green
   // Loudness data [x, y, night, day, violet, green]:
@@ -431,6 +411,12 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
       const hr = hourList ? hourList[v0] : v0;
       if (hr !== undefined && (hr >= 22 || hr <= 6)) bgFill = "#f3e8ff";
       else bgFill = "#e3f7e8";   // 07-22: light green
+    } else if (bg === "loudness-bands") {
+      // same tints as the Last-5-min strip: green audible, yellow loud, red very loud
+      const spl = (typeof v6 === "number" ? v6 : -60 + v0) + DB_OFFSET;
+      bgFill = spl < 62 ? "rgba(26,127,55,0.07)"
+             : spl < 67 ? "rgba(245,159,0,0.09)"
+             : "rgba(207,34,46,0.07)";
     }
     const children = [{
       type: "rect", z2: 1,
@@ -442,27 +428,30 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
     }];
     const unit = h - 2 * g;
     if (typeof v4 === "string" && typeof v5 === "string") {
-      // Loudness: stacked violet night below + green day on top
-      const nightH = unit * (v2 / maxN);
-      const dayH = unit * (v3 / maxN);
-      if (nightH > 0.5) {
+      // Loudness: horizontal bar filled left to right — violet night
+      // segment first, green day segment after it
+      const unitW = w - 2 * g;
+      const nightW = unitW * (v2 / maxN);
+      const dayW = unitW * (v3 / maxN);
+      if (nightW > 0.5) {
         children.push({
           type: "rect", z2: 2,
-          shape: { x: x + g, y: y + h - g - nightH, width: w - 2 * g, height: nightH },
+          shape: { x: x + g, y: y + g, width: nightW, height: h - 2 * g },
           style: { fill: v4 },
         });
       }
-      if (dayH > 0.5) {
+      if (dayW > 0.5) {
         children.push({
           type: "rect", z2: 2,
-          shape: { x: x + g, y: y + h - g - nightH - dayH, width: w - 2 * g, height: dayH },
+          shape: { x: x + g + nightW, y: y + g, width: dayW, height: h - 2 * g },
           style: { fill: v5 },
         });
       }
-      // buckets below 62 dB SPL: two numbers (green day, violet night)
-      const splBucket = -60 + v0 + DB_OFFSET;
+      // buckets below 62 dB SPL: two numbers (green day, violet night);
+      // bucket dBFS rides in the 7th slot when the axis is flipped
+      const splBucket = (typeof v6 === "number" ? v6 : -60 + v0) + DB_OFFSET;
       const p = t => String(Math.round(t));
-      if (splBucket < 62) {
+      if (showText && splBucket < 62) {
         children.push({
           type: "text", z2: 4, silent: true,
           style: { text: p(v3), x: cx, y: cy - 8, fill: "#1a7f37",
@@ -473,7 +462,7 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
           style: { text: p(v2), x: cx, y: cy + 8, fill: "#6b21a8",
                    font: "10px sans-serif", align: "center" },
         });
-      } else {
+      } else if (showText) {
         children.push({
           type: "text", z2: 4, silent: true,
           style: {
@@ -503,13 +492,15 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
         }
         base -= segH;
       }
-      children.push({
-        type: "text", z2: 4, silent: true,
-        style: {
-          text: String(v2), x: cx, y: cy, fill: "#24292f",
-          font: "11px sans-serif", align: "center", verticalAlign: "middle",
-        },
-      });
+      if (showText && v2 > 0) {
+        children.push({
+          type: "text", z2: 4, silent: true,
+          style: {
+            text: String(v2), x: cx, y: cy, fill: "#24292f",
+            font: "11px sans-serif", align: "center", verticalAlign: "middle",
+          },
+        });
+      }
     } else {
       const fh = unit * (v2 / maxN);
       if (fh > 0.5) {
@@ -543,7 +534,7 @@ function dayLabels(days) {
   });
 }
 
-function drawDayHeatmap(id, rows, maxNOverride = null) {
+function drawDayHeatmap(id, rows, maxNOverride = null, showText = false) {
   // bands mode: rows [date, hour, audible, loud, veryLoud]; newest day on top
   const hourList = hourCols();
   const hours = hourList.map(h => String(h).padStart(2, "0"));
@@ -571,7 +562,7 @@ function drawDayHeatmap(id, rows, maxNOverride = null) {
     xAxis: { type: "category", data: hours, position: "top" },
     yAxis: { type: "category", data: labels, axisLabel: { color: "#57606a" } },
     series: [{ type: "custom", encode: { x: 0, y: 1 }, data,
-               renderItem: fillCellsRender(maxN, false, "hours-violet", hourList) }],
+               renderItem: fillCellsRender(maxN, showText, "hours-violet", hourList) }],
   });
 }
 
@@ -603,6 +594,20 @@ async function loadDay3w() {
   }
 }
 
+// single Motor-group grid, same daybands pipeline as the Daily view —
+// the audible band is zeroed so only loud (yellow) + very loud (red) show
+async function loadLoudVehicles() {
+  const to = Date.now() / 1000;
+  const p = { from: to - 21 * 86400, to };
+  await loadCounts();  // fills state.groupMembers
+  const members = (state.groupMembers.Motor || []).join(";");
+  const heat = await get("/api/hourly",
+    { ...p, event: members, by: "daybands" });
+  // by="daybands" rows: [date, hour, audible, loud, veryLoud]
+  const rows = heat.rows.map(([ds, h, , loud, very]) => [ds, h, 0, loud, very]);
+  drawDayHeatmap("loudveh-chart", rows, null, true);
+}
+
 function drawWeekdayLoad(id, rows, maxLoad) {
   const hourList = hourCols();
   const hours = hourList.map(h => String(h).padStart(2, "0"));
@@ -611,7 +616,7 @@ function drawWeekdayLoad(id, rows, maxLoad) {
   const dayIdx = new Map(days.map((d, i) => [d, i]));
   const data = rows.map(([wd, h, v]) => {
     const night = +h >= 22 || +h <= 6;
-    const stops = night ? VIOLET_STOPS : BLUE_STOPS;
+    const stops = night ? VIOLET_STOPS : GREEN_STOPS;
     const t = Math.min(Math.max((v / maxLoad) * (stops.length - 1), 0), stops.length - 1.001);
     const seg = Math.floor(t), f = t - seg;
     const c = stops[seg].map((x, i2) => Math.round(x + (stops[seg + 1][i2] - x) * f));
@@ -666,8 +671,8 @@ const VIEW_LOADERS = {
   threed: loadThreed,
   heatmap: loadHeatmapView,
   day3w: loadDay3w,
+  loudveh: loadLoudVehicles,
   loudest: loadLoudList,
-  longest: loadLongest,
   readme: async () => {},  // static content, nothing to load
 };
 let activeView = "live";
@@ -693,9 +698,22 @@ async function showView(name) {
   if (name === "live") window.scrollTo(0, 0);
 }
 
+/* ------------------------------------------------- sidebar footer (meta) */
+
+async function loadMeta() {
+  try {
+    const m = await get("/api/meta");
+    if (m.version)
+      document.getElementById("meta-version").textContent = "Version " + m.version;
+    if (m.backup)
+      document.getElementById("meta-backup").textContent = "Backup " + m.backup;
+  } catch { /* footer keeps "—" placeholders */ }
+}
+
 /* ------------------------------------------------------------------ boot */
 
 async function boot() {
+  loadMeta();
   try {
     const r = await get("/api/range");
     state.dataMin = r.spl.min ?? r.events.min;
@@ -705,17 +723,6 @@ async function boot() {
     const b = e.target.closest(".nav-item");
     if (b) showView(b.dataset.view).catch(console.error);
   });
-  const syncHrsTags = () => document.querySelectorAll(".tag.hrs")
-    .forEach(t => t.classList.toggle("off", !state.nightOnly));
-  document.querySelectorAll('input[name="hours-mode"]').forEach(r =>
-    r.addEventListener("change", e => {
-      state.nightOnly = e.target.value === "night";
-      syncHrsTags();
-      if (activeView !== "live" && activeView !== "readme") {
-        VIEW_LOADERS[activeView]().catch(console.error);
-      }
-    }));
-  syncHrsTags();
   const syncThrTags = () => {
     const cls = state.loudDb <= -50 ? "thr-blue"
               : state.loudDb <= -42 ? "thr-yellow" : "thr-red";
@@ -733,6 +740,8 @@ async function boot() {
   setInterval(() => {
     if (activeView === "live") loadLive().catch(console.error);
   }, 5000);
+  // keep the "last backup" footer date current
+  setInterval(loadMeta, 60000);
 }
 
 boot().catch(console.error);
