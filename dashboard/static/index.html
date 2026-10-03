@@ -10,27 +10,26 @@
   body {
     margin: 0; background: #f6f8fa; color: #24292f;
     font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex; min-height: 100vh;
+    display: flex; flex-direction: column; min-height: 100vh;
   }
 
-  /* left navigation pane */
+  /* horizontal navigation header */
   aside {
-    width: 200px; flex: 0 0 200px; background: #ffffff;
-    border-right: 1px solid #d0d7de; padding: 16px 10px;
-    position: sticky; top: 0; height: 100vh;
-    display: flex; flex-direction: column;
+    background: #ffffff; border-bottom: 1px solid #d0d7de;
+    padding: 8px 14px; position: sticky; top: 0; z-index: 10;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
   }
-  aside h1 { font-size: 15px; font-weight: 600; margin: 0 8px 18px; }
-  #nav { flex: 1 0 auto; }
+  aside h1 { font-size: 15px; font-weight: 600; margin: 0 12px 0 4px; }
+  #nav { display: contents; }  /* buttons flow straight into the header row */
   #meta-footer {
-    margin-top: auto; padding: 12px 8px 0; font-size: 11px; color: #57606a;
-    display: flex; flex-direction: column; gap: 2px;
+    margin-left: auto; padding-left: 12px; font-size: 11px; color: #57606a;
+    display: flex; align-items: center; gap: 12px;
   }
   #meta-footer a { color: #57606a; text-decoration: none; }
   #meta-footer a:hover { color: #0969da; text-decoration: underline; }
   .nav-item {
-    display: block; width: 100%; text-align: left; margin-bottom: 4px;
-    padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer;
+    display: inline-block; text-align: left;
+    padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer;
     background: transparent; color: #24292f; font-size: 14px;
   }
   .nav-item:hover { background: #eaeef2; }
@@ -92,6 +91,9 @@
   #live { height: 1920px; }  /* 4 × 480 — tall vertical strip, newest stays at top */
   #heatmap-list h3 { margin: 16px 0 6px; font-size: 13px; color: #57606a; }
   #heatmap-list .chart { height: 280px; }
+  /* single pooled grid: one row per day, double line height */
+  #day3w-list .chart { height: 640px; }
+  #loudveh-chart { height: 640px; }
   /* 3D view: drop the content width cap and fill the viewport height */
   body.wide main { max-width: none; }
   #dist3d { height: calc(100vh - 150px); }
@@ -122,19 +124,6 @@
   #loud-table tbody tr + tr td { border-top: 1px solid #eaeef2; }
 
   .hint { color: #656d76; font-size: 12px; }
-
-  /* narrow screens: nav collapses to a top row */
-  @media (max-width: 820px) {
-    body { flex-direction: column; }
-    aside {
-      width: 100%; flex: none; height: auto; position: static;
-      display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
-      border-right: none; border-bottom: 1px solid #d0d7de; padding: 8px;
-    }
-    aside h1 { margin: 0 10px 0 4px; }
-    .nav-item { width: auto; margin-bottom: 0; }
-    #meta-footer { flex-basis: 100%; flex-direction: row; gap: 12px; }
-  }
 </style>
 </head>
 <body>
@@ -143,12 +132,12 @@
   <nav id="nav">
     <button class="nav-item" data-view="readme">Readme</button>
     <button class="nav-item active" data-view="live">Last 5 min</button>
-    <button class="nav-item" data-view="heatmap">Weekday (3w)</button>
-    <button class="nav-item" data-view="day3w">Daily (3w)</button>
+    <button class="nav-item" data-view="heatmap">Av. weekday per hour (3w)</button>
+    <button class="nav-item" data-view="day3w">Hour of day (3w)</button>
     <button class="nav-item" data-view="loudveh">Loud Vehicles (3w)</button>
-    <button class="nav-item" data-view="loudest">Loudest (3w)</button>
-    <button class="nav-item" data-view="events">Loudness (3w)</button>
-    <button class="nav-item" data-view="threed">3D (7d)</button>
+    <button class="nav-item" data-view="loudest">Loudest noises (7d)</button>
+    <button class="nav-item" data-view="events">dB distribution (3w)</button>
+    <button class="nav-item" data-view="threed">Weekday-h-dB (7d)</button>
   </nav>
   <div id="meta-footer">
     <a id="meta-version" href="https://github.com/hostcenter/noise-analysis"
@@ -167,43 +156,43 @@
 
     <section id="view-heatmap" hidden>
       <h2>When does it happen? (hour × weekday)</h2>
+      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · noise load (episode loudness accumulated) per hour × weekday · last 3 weeks · brighter = more load.</div>
       <div id="heatmap-list"></div>
-      <div class="hint">One red grid per group · only events louder than the selected threshold · counts per hour × weekday · all data · local time (container TZ) · brighter = more events.</div>
     </section>
 
     <section id="view-day3w" hidden>
-      <h2>Day last 3w</h2>
+      <h2>Hour of day (3w)</h2>
+      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · episodes per hour of day, one row per day · raw counts, no averaging · last 3 weeks · band per episode peak level: green audible, yellow loud, red very loud.</div>
       <div id="day3w-list"></div>
-      <div class="hint">One grid per group · episodes per hour of day, one row per day · raw counts, no averaging · last 3 weeks · stacked blue/red by the selected threshold.</div>
     </section>
 
     <section id="view-loudveh" hidden>
       <h2>Loud Vehicles (3w)</h2>
+      <div class="hint" style="margin-bottom:8px">One grid for the Motor group, like Hour of day (3w) · only loud (yellow) and very loud (red) episodes shown · number = such episodes in that hour · last 3 weeks.</div>
       <div id="loudveh-chart" class="chart"></div>
-      <div class="hint">One grid for the Motor group, like Daily · only loud (yellow) and very loud (red) episodes shown · number = such episodes in that hour · last 3 weeks.</div>
     </section>
 
     <section id="view-loudest" hidden>
-      <h2>Loudest (3w)</h2>
+      <h2>Loudest noises (7d)</h2>
+      <div class="hint" style="margin-bottom:8px">Loudest 300 episodes of the last seven days · times as hour only (24 h) · rows at 22-06h highlighted red.</div>
       <table id="loud-table">
         <thead>
-          <tr><th>dB</th><th>Duration</th><th>Noise type</th><th>Weekday</th><th>Time</th><th>Date</th></tr>
+          <tr><th>dB</th><th>Noise type</th><th>Weekday</th><th>Time</th><th>Date</th></tr>
         </thead>
         <tbody id="loud-body"></tbody>
       </table>
-      <div class="hint">Loudest 300 episodes of the last three weeks · times as hour only (24 h) · rows at 22-06h highlighted red.</div>
     </section>
 
     <section id="view-events" hidden>
-      <h2>Loudness distribution</h2>
+      <h2>dB distribution</h2>
+      <div class="hint" style="margin-bottom:8px">Event counts per 1 dB row (47–75 dB, louder pooled into ">75 dB") · all noise types pooled · bar grows left → right, number at its end · violet = night (22–06), green = day.</div>
       <div id="classdist" class="chart" style="height:540px"></div>
-      <div class="hint">Event counts per 1 dB bucket, all noise types pooled · violet 22–06, green = 07-21 · fill level = count.</div>
     </section>
 
     <section id="view-threed" hidden>
       <h2>By weekday × hour (last 7 days)</h2>
+      <div class="hint" style="margin-bottom:8px">Dot cloud: noise family × weekday × hour of day · dot size = episodes, color = peak loudness (green audible, yellow loud, red very loud) · black line = current weekday at the current hour · last 7 days · drag to rotate.</div>
       <div id="dist3d" class="chart"></div>
-      <div class="hint">Dot cloud: group × weekday × hour of day · dot size and color = event count · last 7 days · drag to rotate.</div>
     </section>
 
     <section id="view-readme" hidden>
@@ -231,80 +220,89 @@
           <tr><th>View</th><th>What you see</th><th>Question it answers</th></tr>
           <tr><td><b>Last 5 min</b></td><td>A tall strip showing the last
               five minutes, newest on top. Black line = how loud the peaks
-              are. Black pills = recognised sounds, sitting on the line at
-              their loudness. The background is tinted by loudness range:
-              green = audible, yellow = loud, red = very loud.</td>
+              are (dB scale across). Black pills = recognised sounds,
+              sitting on the line at their loudness. The background is
+              tinted by loudness range: green = audible, yellow = loud,
+              red = very loud.</td>
               <td>"What is happening right now?"</td></tr>
-          <tr><td><b>Loudness (3w)</b></td><td>A grid: 1-dB loudness steps
-              as rows (loudest on top), all noise types pooled. The bar in
-              each row grows from left to right with the episode count —
-              violet = night (22–06), green = day. The light background
-              tints each row by loudness range: green = audible,
-              yellow = loud, red = very loud.</td>
-              <td>"How loud is my street?"</td></tr>
-          <tr><td><b>3D (7d)</b></td><td>A floating dot cloud over hour of
-              day, weekday, and loudness. Dot size = how many episodes,
-              color = loud (red) or quieter (blue).</td>
-              <td>"Where do the loud spots cluster?"</td></tr>
-          <tr><td><b>Weekday (4w)</b></td><td>One grid per sound family:
-              hours across, days down, averaged over four weeks. Each cell
-              shows nested surfaces — <b>green</b> = audible episodes,
-              <b>orange</b> = loud, <b>red</b> = very loud — so a mostly
-              red cell means "loud here". Night columns (22–06) are tinted
-              light violet, day columns light green.</td>
-              <td>"What does a typical week look like for each family?"</td></tr>
-          <tr><td><b>Loudest (3w)</b></td><td>Every episode of the last
-              three weeks, loudest first — loudness, duration, type,
-              weekday, time, and date (cells tinted by loudness range).
-              Night rows (22:00–06:59) have a violet time cell.</td>
+          <tr><td><b>Av. weekday per hour (3w)</b></td><td>One grid, all noise types
+              pooled: hours across, weekdays down, last three weeks. Each
+              cell shows the accumulated noise load — brighter means more
+              load. Night columns (22–06) are tinted light violet, day
+              columns light green.</td>
+              <td>"What does a typical week look like?"</td></tr>
+          <tr><td><b>Hour of day (3w)</b></td><td>One grid, all noise types
+              pooled: one row per day, hours across. Each cell stacks the
+              episodes of that hour, banded by their <b>peak level</b> —
+              green = audible, yellow = loud, red = very loud. Night
+              columns are tinted light violet, day columns light green.</td>
+              <td>"Which days and hours were noisy — and how loud?"</td></tr>
+          <tr><td><b>Loud Vehicles (3w)</b></td><td>Same grid as Hour of day (3w)
+              but only for the <b>Motor</b> family, and only episodes whose
+              peak reached the loud (yellow, 62&nbsp;dB+) or very loud (red,
+              67&nbsp;dB+) range. The number in a cell = such episodes in
+              that hour.</td>
+              <td>"When do the really loud vehicles pass?"</td></tr>
+          <tr><td><b>Loudest noises (7d)</b></td><td>The 300 loudest episodes of
+              the last seven days, loudest first — loudness, noise type,
+              weekday, time, and date. Cells are tinted by loudness range;
+              night rows (22:00–06:59) have a violet time cell.</td>
               <td>"What were the biggest noises recently?"</td></tr>
+          <tr><td><b>dB distribution (3w)</b></td><td>One row per 1-dB step
+              from 47 up to 75&nbsp;dB (everything louder pooled into
+              ">75&nbsp;dB"), all noise types together. The bar grows from
+              left to right with the count, printed at its end — violet =
+              night (22–06), green = day. The light row background tints
+              each step: green = audible, yellow = loud, red = very loud.</td>
+              <td>"How loud is my street, and how often?"</td></tr>
+          <tr><td><b>Weekday-h-dB (7d)</b></td><td>A floating dot cloud over
+              hour of day, weekday, and loudness (last 7 days). Dot size =
+              number of episodes; color = loudness range (green audible,
+              yellow loud, red very loud; quiet night dots violet). The
+              black line connects the dots of the <b>current weekday at the
+              current hour</b>. Drag to rotate.</td>
+              <td>"Where do the loud spots cluster?"</td></tr>
         </table>
 
-        <h3>Sidebar filters</h3>
-        <p><b>22-06 hours</b> switches the episode views between all hours
-        (00–24h) and night hours only (22:00–06:59) — the small badges next
-        to the view names show which views react to it (they dim when all
-        hours are shown). <b>"Louder than"</b> sets where "loud" begins for
-        the 3D colors and the Weekday grids.</p>
-
         <h3>How loud is "loud"? (the dB numbers)</h3>
-        <p>The loudness numbers (dB) here are <b>relative</b> — the microphone
-        is not calibrated against an official meter. Use them to
-        <b>compare</b>: −60 is very quiet (nighttime lull), −50 is normal
-        street murmur, −40 is clearly loud (a truck or shouting), −30 and
-        above is very loud at the window. Bigger number (closer to zero) =
-        louder. The color code everywhere: <b>green/blue = audible</b>,
-        <b>yellow/orange = loud</b>, <b>red = very loud</b>.</p>
+        <p>The microphone is <b>calibrated against a reference SPL meter</b>,
+        so the numbers are true dB SPL at the window. The color code
+        everywhere: <b>green = audible</b> (up to 62&nbsp;dB), <b>yellow =
+        loud</b> (62–67&nbsp;dB), <b>red = very loud</b> (67&nbsp;dB and
+        above). For orientation: a quiet night lull sits around 45–50, a
+        passing car 60–70, a loud motorcycle 80+.</p>
 
         <h3>What counts as one episode?</h3>
         <p>One real-world occurrence = one episode. When a car passes by, the
         computer briefly recognises several sound categories at once — but
-        only the loudest moment is written down, together with <b>how long
-        the episode lasted</b>. Then the notebook stays shut for 10 seconds.
-        So one passing car ≈ one line in the diary, not five. Episodes with
-        a duration ≥ 10 seconds are the ones that really drag on. Sounds
-        that are impossible here (cows, owls, whales, artillery…) and pure
-        silence are filtered out automatically.</p>
+        they are merged into one line: start time, the clearest type
+        (at its loudest moment), the <b>peak level</b> of the whole episode,
+        and <b>how long it lasted</b>. Then the notebook stays shut for
+        10 seconds. So one passing car ≈ one line in the diary, not five.
+        Sounds that are impossible here (cows, owls, whales, artillery…)
+        and pure noise-floor labels are filtered out automatically.</p>
 
-        <h3>Sound families</h3>
+        <h3>Noise families</h3>
         <p>The computer originally distinguishes over 500 sound types — far
-        too many to read. Nachtunruhe sorts them into a handful of
-        families: <b>Human</b> (voices, conversations — including animal
-        sounds like birds, dogs and cats), <b>Motor</b> (cars, motorcycles,
-        trucks, engines), <b>Music</b>, and <b>Other</b>. All views use
-        these same families.</p>
+        too many to read. Where a view needs grouping, Nachtunruhe sorts
+        them into a few families: <b>Motor</b> (cars, motorcycles, trucks,
+        engines), <b>Human</b> (voices, shouting — and animal sounds like
+        birds, dogs and cats), and <b>Other</b> (sirens, trains, aircraft,
+        music, doors). Most views pool all families into one picture.</p>
 
         <h3>Privacy</h3>
         <p>No audio is ever recorded, stored, or transmitted. No internet
         connection is needed — everything runs inside the apartment on the
-        Pi. What exists are anonymous numbers and labels: "18.09., 23:12,
-        Motor, −38&nbsp;dB". Nobody can reconstruct a conversation or a voice
-        from this data.</p>
+        Pi. What exists are anonymous numbers and labels: "30.09., 07:15,
+        Vehicle, 71&nbsp;dB". Nobody can reconstruct a conversation or a
+        voice from this data.</p>
 
         <h3>Day-to-day</h3>
         <p>Everything runs automatically: the diary keeps writing even when
-        this page is closed, it survives power cuts, and the data stays on
-        the device. Just open this page whenever you want to look.</p>
+        this page is closed, it survives power cuts, and a copy of the log
+        is pushed off-site (Cloudflare&nbsp;R2) every hour. Measured errors
+        (e.g. the microphone was touched) can be removed again with a small
+        purge tool. Just open this page whenever you want to look.</p>
       </div>
     </section>
   </main>

@@ -178,9 +178,12 @@ async function loadCounts() {
 async function loadClassDist() {
   const to = Date.now() / 1000;
   const d = await get("/api/classdist", { from: to - 21 * 86400, to });
-  // rows: [event, bucket(-60..-31 dBFS), night, day] → pool all noise types
-  const rowsDbfs = Array.from({ length: 28 }, (_, i) => -60 + i);       // -60..-31 → 47..76 dB
+  // rows: [event, bucket(dBFS), night, day] → pool all noise types;
+  // 1-dB rows from 47 up to 75 dB, everything louder pooled into ">75 dB"
+  const rowsDbfs = Array.from({ length: -32 - (-60) + 1 }, (_, i) => -60 + i);
   const rowLabels = rowsDbfs.map(b => String(Math.round(b + DB_OFFSET)) + " dB");
+  const OVERFLOW = -31;              // pseudo bucket: buckets ≥ -31 → ">75 dB"
+  rowLabels.push(">75 dB");
   const byBucket = new Map();
   for (const [ev, b, night, day] of d.rows) {
     if (EXCLUDED_GROUPS.has(groupOf(ev))) continue;
@@ -190,13 +193,24 @@ async function loadClassDist() {
   }
   const data = [];
   let maxN = 1;
-  rowsDbfs.forEach((b, yi) => {
-    const [night, day] = byBucket.get(b) ?? [0, 0];
+  const pushRow = (b, yi, night, day) => {
     maxN = Math.max(maxN, night + day);
     // stacked: violet night below, green day on top; 7th slot = bucket dBFS
     data.push([0, yi, night, day, "#6b21a8", "#1a7f37", b]);
+  };
+  rowsDbfs.forEach((b, yi) => {
+    const [night, day] = byBucket.get(b) ?? [0, 0];
+    pushRow(b, yi, night, day);
   });
-  mkChart("classdist").setOption({
+  let ovNight = 0, ovDay = 0;
+  for (const [b, [night, day]] of byBucket) {
+    if (b >= OVERFLOW) { ovNight += night; ovDay += day; }
+  }
+  pushRow(OVERFLOW, rowsDbfs.length, ovNight, ovDay);
+  const el = document.getElementById("classdist");
+  el.style.height = `${rowsDbfs.length * 18 + 50}px`;
+  const chart = mkChart("classdist");
+  chart.setOption({
     animation: false,
     grid: { left: 48, right: 16, top: 16, bottom: 28 },
     tooltip: { formatter: p =>
@@ -207,8 +221,9 @@ async function loadClassDist() {
     yAxis: { type: "category", data: rowLabels,
              axisLabel: { color: "#57606a", fontSize: 10 } },
     series: [{ type: "custom", encode: { x: 0, y: 1 }, data,
-               renderItem: fillCellsRender(maxN, false, "loudness-bands") }],
+               renderItem: fillCellsRender(maxN, true, "loudness-bands") }],
   });
+  chart.resize();
 }
 
 async function loadEventsView() {
@@ -223,7 +238,7 @@ const WDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 async function loadLoudList() {
   const to = Date.now() / 1000;
-  const d = await get("/api/loudest", { from: to - 21 * 86400, to, limit: 300 });
+  const d = await get("/api/loudest", { from: to - 7 * 86400, to, limit: 300 });
   document.getElementById("loud-body").innerHTML = d.rows.length
     ? d.rows.map(r => {
         const dt = new Date(r[0] * 1000);
@@ -232,10 +247,9 @@ async function loadLoudList() {
         const h = String(h24).padStart(2, "0") + "h";
         const dbBg = r[3] >= -40 ? "#ffebe9" : r[3] >= -45 ? "#fff3bf" : "#e7f0fe";
         const timeBg = night ? "#f3e8ff" : "#e3f7e8";
-        const dur = r[4] == null ? "—" : `${r[4].toFixed(1)} s`;
         return `<tr${night ? ' class="night"' : ""}>` +
                `<td style="background:${dbBg}">${(r[3] + DB_OFFSET).toFixed(1)}</td>` +
-               `<td>${dur}</td><td>${r[1]}</td>` +
+               `<td>${r[1]}</td>` +
                `<td>${WDAYS[dt.getDay()]}</td>` +
                `<td style="background:${timeBg}">${h}</td>` +
                `<td>${fmtDate(r[0] * 1000)}</td></tr>`;
@@ -448,26 +462,32 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
         });
       }
       // buckets below 62 dB SPL: two numbers (green day, violet night);
-      // bucket dBFS rides in the 7th slot when the axis is flipped
+      // bucket dBFS rides in the 7th slot when the axis is flipped.
+      // numbers sit right of the bar end (white when clamped onto the bar)
       const splBucket = (typeof v6 === "number" ? v6 : -60 + v0) + DB_OFFSET;
       const p = t => String(Math.round(t));
-      if (showText && splBucket < 62) {
+      const barEnd = x + g + nightW + dayW;
+      const tx = Math.min(barEnd + 6, x + w - 12);
+      const txtFill = tx < barEnd + 2 ? "#ffffff" : "#24292f";
+      if (showText && v2 + v3 > 0 && splBucket < 62) {
         children.push({
           type: "text", z2: 4, silent: true,
-          style: { text: p(v3), x: cx, y: cy - 8, fill: "#1a7f37",
-                   font: "10px sans-serif", align: "center" },
+          style: { text: p(v3), x: tx, y: cy - 7,
+                   fill: tx < barEnd + 2 ? "#ffffff" : "#1a7f37",
+                   font: "10px sans-serif", align: "left" },
         });
         children.push({
           type: "text", z2: 4, silent: true,
-          style: { text: p(v2), x: cx, y: cy + 8, fill: "#6b21a8",
-                   font: "10px sans-serif", align: "center" },
+          style: { text: p(v2), x: tx, y: cy + 7,
+                   fill: tx < barEnd + 2 ? "#ffffff" : "#6b21a8",
+                   font: "10px sans-serif", align: "left" },
         });
-      } else if (showText) {
+      } else if (showText && v2 + v3 > 0) {
         children.push({
           type: "text", z2: 4, silent: true,
           style: {
-            text: String(v2 + v3), x: cx, y: cy, fill: "#24292f",
-            font: "11px sans-serif", align: "center", verticalAlign: "middle",
+            text: String(v2 + v3), x: tx, y: cy, fill: txtFill,
+            font: "11px sans-serif", align: "left", verticalAlign: "middle",
           },
         });
       }
@@ -476,10 +496,13 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
       const bH = unit * (v3 / maxN);
       const yH = unit * (v4 / maxN);
       const rH = unit * (v5 / maxN);
+      // any non-zero band gets a minimum visible sliver (a 1-episode cell
+      // must not vanish next to the busiest cell of the shared scale)
+      const MIN_SEG = 1.5;
       const segs = [
-        [bH, typeof v6 === "string" ? v6 : "#1a7f37"],
-        [yH, "#f59f00"],
-        [rH, "#cf222e"],
+        [v3 > 0 ? Math.max(bH, MIN_SEG) : bH, typeof v6 === "string" ? v6 : "#1a7f37"],
+        [v4 > 0 ? Math.max(yH, MIN_SEG) : yH, "#f59f00"],
+        [v5 > 0 ? Math.max(rH, MIN_SEG) : rH, "#cf222e"],
       ];
       let base = unit;
       for (const [segH, segCol] of segs) {
@@ -566,32 +589,24 @@ function drawDayHeatmap(id, rows, maxNOverride = null, showText = false) {
   });
 }
 
+// one pooled grid: all noise types together, one row per day of the last 3 weeks
 async function loadDay3w() {
   const to = Date.now() / 1000;
   const p = { from: to - 21 * 86400, to };
-  const names = await loadCounts();
+  await loadCounts();  // fills state.groupMembers
   const cont = document.getElementById("day3w-list");
   disposeChartsIn(cont);
   cont.innerHTML = "";
-  const results = await Promise.all(names.map(async g => {
-    const id = "d3w-" + g.replace(/[^a-z0-9]/gi, "-");
-    const h3 = document.createElement("h3");
-    h3.textContent = g;
-    const div = document.createElement("div");
-    div.id = id;
-    div.className = "chart";
-    cont.append(h3, div);
-    const members = (state.groupMembers[g] || []).join(";");
-    const heat = await get("/api/hourly",
-      { ...p, event: members, by: "daybands" });
-    return { id, rows: heat.rows };
-  }));
-  // one shared scale: the busiest cell of any section defines 100% fill
-  const maxN = Math.max(1,
-    ...results.flatMap(r => r.rows.map(row => row[2] + row[3] + row[4])));
-  for (const { id, rows } of results) {
-    drawDayHeatmap(id, rows, maxN);
-  }
+  // every non-Background class, ";"-joined for the API
+  const members = Object.entries(state.groupMembers)
+    .filter(([g]) => !EXCLUDED_GROUPS.has(g))
+    .flatMap(([, m]) => m).join(";");
+  const div = document.createElement("div");
+  div.id = "d3w-all";
+  div.className = "chart";
+  cont.append(div);
+  const heat = await get("/api/hourly", { ...p, event: members, by: "daybands" });
+  drawDayHeatmap("d3w-all", heat.rows);
 }
 
 // single Motor-group grid, same daybands pipeline as the Daily view —
@@ -648,19 +663,25 @@ async function loadHeatmapView() {
   const cont = document.getElementById("heatmap-list");
   disposeChartsIn(cont);
   cont.innerHTML = "";
-  const loadGrids = state.weekdayPayload.load || {};
-  const maxLoad = Math.max(1, ...Object.values(loadGrids)
-    .flatMap(cells => cells.map(x => x[2])));
-  for (const g of state.weekdayPayload.groups) {
-    const id = "hm-" + g.replace(/[^a-z0-9]/gi, "-");
-    const h3 = document.createElement("h3");
-    h3.textContent = g;
-    const div = document.createElement("div");
-    div.id = id;
-    div.className = "chart";
-    cont.append(h3, div);
-    drawWeekdayLoad(id, loadGrids[g] || [], maxLoad);
+  // pool the per-group noise-load grids into one (Background already
+  // excluded server-side); noise load is additive, so sums are valid
+  const merged = new Map();
+  for (const cells of Object.values(state.weekdayPayload.load || {})) {
+    for (const [wd, h, v] of cells) {
+      const k = `${wd}|${h}`;
+      merged.set(k, (merged.get(k) || 0) + v);
+    }
   }
+  const grid = [...merged].map(([k, v]) => {
+    const [wd, h] = k.split("|").map(Number);
+    return [wd, h, Math.round(v * 10) / 10];
+  });
+  const maxLoad = Math.max(1, ...grid.map(x => x[2]));
+  const div = document.createElement("div");
+  div.id = "hm-all";
+  div.className = "chart";
+  cont.append(div);
+  drawWeekdayLoad("hm-all", grid, maxLoad);
 }
 
 /* ---------------------------------------------------------- view switching */
