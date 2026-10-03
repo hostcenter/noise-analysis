@@ -87,10 +87,10 @@ const fmtDate = t => {
 async function loadLive() {
   const d = await get("/api/live", { secs: 300 });
 
-  // logarithmic loudness axis: plot log(dB + 61) so −60→0, −25→log36
-  const LOG_OFF = 61;
+  // logarithmic loudness axis: plot log(dB + 56) so −55→0, −25→log31
+  const LOG_OFF = 56;
   const toLog = v => Math.log(Math.max(v + LOG_OFF, 0.5));
-  const dB_TICKS = [-60, -55, -50, -45, -40, -35, -30, -25];
+  const dB_TICKS = [-55, -50, -45, -40, -35, -30, -25];
 
   // pills show the most specific type identified (no grouping);
   // Background-group episodes (noise-floor labels) are not shown
@@ -114,7 +114,7 @@ async function loadLive() {
     silent: true,
     grid: { left: 86, right: 20, top: 48, bottom: 16 },
     xAxis: {
-      type: "value", min: 0, max: Math.log(36), position: "top", name: "dB",
+      type: "value", min: 0, max: Math.log(31), position: "top", name: "dB",
       nameLocation: "middle", nameGap: 28,
       axisLabel: { show: false }, axisTick: { show: false },
       splitLine: { show: false },
@@ -134,7 +134,7 @@ async function loadLive() {
         markArea: {
           silent: true, animation: false,
           data: [
-            [{ xAxis: toLog(-60), itemStyle: { color: "rgba(26,127,55,0.07)" } },
+            [{ xAxis: toLog(-55), itemStyle: { color: "rgba(26,127,55,0.07)" } },
              { xAxis: toLog(-45) }],
             [{ xAxis: toLog(-45), itemStyle: { color: "rgba(245,159,0,0.09)" } },
              { xAxis: toLog(-40) }],
@@ -265,7 +265,7 @@ async function loadLoudList() {
     : "<tr><td colspan='5'>none yet — no vehicle episodes recorded</td></tr>";
 }
 
-const dist3dState = { data: [], info: new Map(), zMin: 40, zMax: 80 };
+const dist3dState = { data: [], info: new Map() };
 
 async function loadDist3D() {
   const to = Date.now() / 1000;
@@ -298,7 +298,6 @@ async function loadDist3D() {
   const info = new Map();
   const data = [];
   const zHours = hourCols();
-  let zMin = Infinity, zMax = -Infinity;
   const now = new Date();
   const nowWd = (now.getDay() + 6) % 7, nowH = now.getHours();
   for (const [key, entry] of cells) {
@@ -306,8 +305,6 @@ async function loadDist3D() {
     const x = +h;                                         // always 00-24
     const y = (Number(wd) + 6) % 7;
     const z = entry.splSum / entry.n + DB_OFFSET;         // avg loudness (dB SPL)
-    zMin = Math.min(zMin, z);
-    zMax = Math.max(zMax, z);
     // loudness color code; quiet dots are violet at night (22-07)
     const color = z >= 67 ? "#cf222e"
                 : z >= 62 ? "#f59f00"
@@ -323,8 +320,6 @@ async function loadDist3D() {
   }
   dist3dState.data = data;
   dist3dState.info = info;
-  dist3dState.zMin = zMin;
-  dist3dState.zMax = zMax;
   dist3dState.days = days;
   dist3dState.hours = zHours.map(h => String(h).padStart(2, "0"));
   dist3dState.dayDate = dayDate;
@@ -334,7 +329,7 @@ async function loadDist3D() {
 }
 
 function applyDist3D() {
-  const { data, info, zMin, zMax, days, hours, dayDate } = dist3dState;
+  const { data, info, days, hours, dayDate } = dist3dState;
   const styled = data.map(dot => dot.isNow
     ? { ...dot, symbolSize: dot.baseSize * 1.8,
         itemStyle: { color: dot.itemStyle.color, opacity: 1 } }
@@ -357,14 +352,14 @@ function applyDist3D() {
                `peak ${(+peak).toFixed(1)} dB · ${Math.round(dur)} s total`;
       },
     },
-    xAxis3D: { type: "value", min: -0.5, max: 23.5, name: "hour",
-               axisLabel: { formatter: v => v + "h",
+    xAxis3D: { type: "value", min: 0, max: 24, interval: 4, name: "hour",
+               axisLabel: { formatter: v => String(Math.round(v)).padStart(2, "0") + "h",
                             textStyle: { color: "#57606a", fontSize: 10 } } },
     yAxis3D: { type: "category", data: days, name: "weekday",
                axisLabel: { textStyle: { color: "#57606a", fontSize: 10 } } },
     zAxis3D: { type: "value",
-               min: Math.floor(Number.isFinite(zMin) ? zMin : 40),
-               max: Math.ceil(Number.isFinite(zMax) ? zMax : 80),
+               min: 40,
+               max: 70,
                name: "dB",
                axisLabel: { formatter: v => Math.round(v),
                             textStyle: { color: "#57606a", fontSize: 10 } } },
