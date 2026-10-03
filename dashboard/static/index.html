@@ -135,7 +135,7 @@
     <button class="nav-item" data-view="heatmap">Av. weekday per hour (3w)</button>
     <button class="nav-item" data-view="day3w">Hour of day (3w)</button>
     <button class="nav-item" data-view="loudveh">Loud Vehicles (3w)</button>
-    <button class="nav-item" data-view="loudest">Loudest noises (7d)</button>
+    <button class="nav-item" data-view="loudest">Loudest vehicles (7d)</button>
     <button class="nav-item" data-view="events">dB distribution (3w)</button>
     <button class="nav-item" data-view="threed">Weekday-h-dB (7d)</button>
   </nav>
@@ -173,8 +173,8 @@
     </section>
 
     <section id="view-loudest" hidden>
-      <h2>Loudest noises (7d)</h2>
-      <div class="hint" style="margin-bottom:8px">Loudest 300 episodes of the last seven days · times as hour only (24 h) · rows at 22-06h highlighted red.</div>
+      <h2>Loudest vehicles (7d)</h2>
+      <div class="hint" style="margin-bottom:8px">All vehicle episodes (Motor group) above 62 dB peak in the last seven days, loudest first · times as hour only (24 h) · rows at 22-06h highlighted red.</div>
       <table id="loud-table">
         <thead>
           <tr><th>dB</th><th>Noise type</th><th>Weekday</th><th>Time</th><th>Date</th></tr>
@@ -243,11 +243,13 @@
               67&nbsp;dB+) range. The number in a cell = such episodes in
               that hour.</td>
               <td>"When do the really loud vehicles pass?"</td></tr>
-          <tr><td><b>Loudest noises (7d)</b></td><td>The 300 loudest episodes of
-              the last seven days, loudest first — loudness, noise type,
-              weekday, time, and date. Cells are tinted by loudness range;
-              night rows (22:00–06:59) have a violet time cell.</td>
-              <td>"What were the biggest noises recently?"</td></tr>
+          <tr><td><b>Loudest vehicles (7d)</b></td><td>All vehicle
+              episodes (Motor family) whose peak level reached 62&nbsp;dB in
+              the last seven days, loudest first — the view title shows how
+              many there are. Loudness, noise type, weekday, time, and date;
+              cells tinted by loudness range; night rows (22:00–06:59) have
+              a violet time cell.</td>
+              <td>"Which vehicles were the loudest recently?"</td></tr>
           <tr><td><b>dB distribution (3w)</b></td><td>One row per 1-dB step
               from 47 up to 75&nbsp;dB (everything louder pooled into
               ">75&nbsp;dB"), all noise types together. The bar grows from
@@ -310,6 +312,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=231"></script>
+<script src="/app.js?v=234"></script>
 </body>
 </html>

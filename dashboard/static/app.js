@@ -238,7 +238,15 @@ const WDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 async function loadLoudList() {
   const to = Date.now() / 1000;
-  const d = await get("/api/loudest", { from: to - 7 * 86400, to, limit: 300 });
+  await loadCounts();  // fills state.groupMembers
+  const members = (state.groupMembers.Motor || []).join(";");
+  // every vehicle episode of the last 7 days whose peak reached 62 dB SPL
+  const d = await get("/api/loudest", {
+    from: to - 7 * 86400, to, event: members,
+    min_db: (62 - DB_OFFSET).toFixed(1), limit: 20000,
+  });
+  document.querySelector("#view-loudest h2").textContent =
+    `${d.rows.length} Loudest vehicles (7d)`;
   document.getElementById("loud-body").innerHTML = d.rows.length
     ? d.rows.map(r => {
         const dt = new Date(r[0] * 1000);
@@ -254,7 +262,7 @@ async function loadLoudList() {
                `<td style="background:${timeBg}">${h}</td>` +
                `<td>${fmtDate(r[0] * 1000)}</td></tr>`;
       }).join("")
-    : "<tr><td colspan='6'>none yet — nothing louder than −40 dB recorded</td></tr>";
+    : "<tr><td colspan='5'>none yet — no vehicle episodes recorded</td></tr>";
 }
 
 const dist3dState = { data: [], info: new Map(), zMin: 40, zMax: 80 };
@@ -648,7 +656,9 @@ function drawWeekdayLoad(id, rows, maxLoad) {
                       `noise load <b>${p.value[2]}</b>`,
     },
     xAxis: { type: "category", data: hours, position: "top" },
-    yAxis: { type: "category", data: days, axisLabel: { color: "#57606a" } },
+    // inverse → first row (Mon) on top, reading top-down Mon…Sun
+    yAxis: { type: "category", data: days, inverse: true,
+             axisLabel: { color: "#57606a" } },
     series: [{ type: "heatmap", data }],
   });
 }
@@ -733,8 +743,23 @@ async function loadMeta() {
 
 /* ------------------------------------------------------------------ boot */
 
+// auto-reload when the UI was updated server-side: mobile/tab Safari keeps a
+// background page's old JS alive indefinitely, so new deploys never reach it.
+// index.html is served with Cache-Control: no-cache → its ETag changes on
+// every static-file change; poll it and reload the page when it differs.
+let htmlETag = null;
+async function checkUiDeploy() {
+  try {
+    const etag = (await fetch("/", { method: "HEAD" })).headers.get("etag");
+    if (!etag) return;
+    if (htmlETag === null) { htmlETag = etag; return; }
+    if (etag !== htmlETag) location.reload();
+  } catch { /* server hiccup — retry on the next tick */ }
+}
+
 async function boot() {
   loadMeta();
+  checkUiDeploy();
   try {
     const r = await get("/api/range");
     state.dataMin = r.spl.min ?? r.events.min;
@@ -761,8 +786,8 @@ async function boot() {
   setInterval(() => {
     if (activeView === "live") loadLive().catch(console.error);
   }, 5000);
-  // keep the "last backup" footer date current
-  setInterval(loadMeta, 60000);
+  // keep the "last backup" footer date current + pick up UI deploys
+  setInterval(() => { loadMeta(); checkUiDeploy(); }, 60000);
 }
 
 boot().catch(console.error);

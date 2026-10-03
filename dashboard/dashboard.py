@@ -495,14 +495,26 @@ def api_weekcounts(
 def api_loudest(
     from_: float = Query(alias="from"),
     to: float = Query(...),
+    event: str = Query(default=""),
+    min_db: float = Query(default=-999),
     limit: int = Query(default=50000, le=50000),
 ):
-    """All episodes in the window, loudest first."""
-    rows = q(
-        "SELECT ts, event, confidence, spl, duration FROM events "
-        "WHERE ts BETWEEN :f AND :t AND spl IS NOT NULL ORDER BY spl DESC LIMIT ?",
-        (from_, to, limit),
-    )
+    """All episodes in the window, loudest first. event: ";"-separated
+    class names to restrict the ranking (AudioSet names may contain commas).
+    min_db (dBFS): only episodes whose peak level (fallback: spl) reached
+    it; the returned level column is that peak."""
+    sql = ("SELECT ts, event, confidence, COALESCE(spl_peak, spl), duration "
+           "FROM events "
+           "WHERE ts BETWEEN :f AND :t AND spl IS NOT NULL "
+           "AND COALESCE(spl_peak, spl) >= :mindb")
+    params = {"f": from_, "t": to, "mindb": min_db}
+    evs = [e.strip() for e in event.split(";") if e.strip()]
+    if evs:
+        sql += " AND event IN (%s)" % ",".join(f":ev{i}" for i in range(len(evs)))
+        params.update({f"ev{i}": e for i, e in enumerate(evs)})
+    sql += " ORDER BY 4 DESC LIMIT :lim"
+    params["lim"] = limit
+    rows = q(sql, params)
     return {"rows": [[r[0], r[1], r[2], r[3], r[4]] for r in rows]}
 
 
