@@ -141,14 +141,18 @@ def alsa_frames():
     cmd = [
         "arecord", "-D", ALSA_DEVICE, "-f", "S16_LE",
         "-r", str(SAMPLE_RATE), "-c", "1", "-t", "raw", "-q",
+        "--buffer-time", "1000000",
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         buf = np.zeros(0, dtype=np.float32)
         need = HOP_SIZE * 2
         while not _stop:
             raw = proc.stdout.read(need)
             if not raw:
+                err = proc.stderr.read().decode("utf-8", errors="replace").strip()
+                if err:
+                    print(f"arecord error: {err}", flush=True)
                 break
             chunk = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
             buf = np.concatenate([buf, chunk])
@@ -182,6 +186,23 @@ def file_frames(path):
         if _stop:
             return
         yield data[i : i + FRAME_SIZE]
+
+
+def _emit_episode(start_ts, best, peak, last_loud, class_names):
+    bi, bconf, bspl = best
+    append_json(
+        "events.jsonl",
+        {
+            "ts": datetime.fromtimestamp(start_ts, timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "event": class_names[int(bi)],
+            "confidence": round(bconf, 3),
+            "spl_db": bspl,
+            "spl_db_max": round(peak, 1),
+            "duration_s": round(max(0.0, last_loud - start_ts), 1),
+        },
+    )
 
 
 def run_loop(frames, yam, hann, freqs, a_weight, class_names):
@@ -237,34 +258,31 @@ def run_loop(frames, yam, hann, freqs, a_weight, class_names):
                     ep_best = (best, float(scores[best]), dba)
             if ep_start is not None:
                 ep_peak = max(ep_peak, dba)
-            # cap: force-log episodes that never go quiet
-            if ep_start is not None and now - ep_start >= EPISODE_MAX:
-                ep_last_loud = now
+                # cap: force-log episodes that exceed EPISODE_MAX without going quiet
+                if now - ep_start >= EPISODE_MAX:
+                    _emit_episode(ep_start, ep_best, ep_peak, now, class_names)
+                    last_event = now
+                    last_logged[ep_best[0]] = now
+                    ep_start = now
+                    ep_best = (best, float(scores[best]), dba)
+                    ep_peak = dba
+                    ep_last_loud = now
         elif ep_start is not None and now - ep_last_loud >= EPISODE_QUIET:
             # episode over (quiet for EPISODE_QUIET seconds) → write it with
             # its duration; ts = episode start, type/conf/spl at the loudest,
             # spl_db_max = strict peak level over all episode frames
-            last_event = ep_start
+            last_event = ep_last_loud
             last_logged[ep_best[0]] = ep_start
-            bi, bconf, bspl = ep_best
-            append_json(
-                "events.jsonl",
-                {
-                    "ts": datetime.fromtimestamp(ep_start, timezone.utc)
-                    .isoformat(timespec="milliseconds")
-                    .replace("+00:00", "Z"),
-                    "event": class_names[int(bi)],
-                    "confidence": round(bconf, 3),
-                    "spl_db": bspl,
-                    "spl_db_max": round(ep_peak, 1),
-                    "duration_s": round(ep_last_loud - ep_start, 1),
-                },
-            )
+            _emit_episode(ep_start, ep_best, ep_peak, ep_last_loud, class_names)
             ep_start = None
             ep_best = None
             ep_peak = None
+            ep_last_loud = None
         if RUN_SECONDS > 0 and time.time() - start >= RUN_SECONDS:
             break
+
+    if ep_start is not None and ep_best is not None:
+        _emit_episode(ep_start, ep_best, ep_peak, ep_last_loud or ep_start, class_names)
 
 
 def main():

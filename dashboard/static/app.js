@@ -267,10 +267,6 @@ async function loadLoudList() {
 
 const dist3dState = { data: [], info: new Map(), zMin: 40, zMax: 80 };
 
-function hexToRgb(hex) {
-  return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-}
-
 async function loadDist3D() {
   const to = Date.now() / 1000;
   const d = await get("/api/weekcounts",
@@ -394,6 +390,10 @@ function hexToRgb(hex) {
 }
 const VIOLET_STOPS = ["#f6effc", "#d8b4fe", "#a855f7", "#6b21a8"].map(hexToRgb);
 const GREEN_STOPS = ["#e3f7e8", "#8ce99a", "#2f9e44", "#1a7f37"].map(hexToRgb);
+// greyscale twin of the ramps above — marks the cell of the actual day+hour
+const GREY_STOPS = ["#f4f4f4", "#c8c8c8", "#8a8a8a", "#3d3d3d"].map(hexToRgb);
+// greyscale loudness bands: audible, loud, very loud (louder = darker)
+const NOW_BANDS = ["#b3b3b3", "#7a7a7a", "#333333"];
 
 function disposeChartsIn(container) {
   container.querySelectorAll(".chart").forEach(el => {
@@ -427,11 +427,14 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
     const v4 = api.value(4);
     const v5 = api.value(5);
     const v6 = api.value(6);
+    // slot 7: 1 = cell of the actual day+hour → greyscale instead of color
+    const nowCell = api.value(7) === 1;
     const g = 1; // gap between cells
     let bgFill = "#eaeef2";
     if (bg === "hours-violet") {
       const hr = hourList ? hourList[v0] : v0;
-      if (hr !== undefined && (hr >= 22 || hr <= 6)) bgFill = "#f3e8ff";
+      if (nowCell) bgFill = "#ebebeb";           // actual hour: neutral grey
+      else if (hr !== undefined && (hr >= 22 || hr <= 6)) bgFill = "#f3e8ff";
       else bgFill = "#e3f7e8";   // 07-22: light green
     } else if (bg === "loudness-bands") {
       // same tints as the Last-5-min strip: green audible, yellow loud, red very loud
@@ -508,9 +511,10 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
       // must not vanish next to the busiest cell of the shared scale)
       const MIN_SEG = 1.5;
       const segs = [
-        [v3 > 0 ? Math.max(bH, MIN_SEG) : bH, typeof v6 === "string" ? v6 : "#1a7f37"],
-        [v4 > 0 ? Math.max(yH, MIN_SEG) : yH, "#f59f00"],
-        [v5 > 0 ? Math.max(rH, MIN_SEG) : rH, "#cf222e"],
+        [v3 > 0 ? Math.max(bH, MIN_SEG) : bH,
+         nowCell ? NOW_BANDS[0] : typeof v6 === "string" ? v6 : "#1a7f37"],
+        [v4 > 0 ? Math.max(yH, MIN_SEG) : yH, nowCell ? NOW_BANDS[1] : "#f59f00"],
+        [v5 > 0 ? Math.max(rH, MIN_SEG) : rH, nowCell ? NOW_BANDS[2] : "#cf222e"],
       ];
       let base = unit;
       for (const [segH, segCol] of segs) {
@@ -569,6 +573,10 @@ function drawDayHeatmap(id, rows, maxNOverride = null, showText = false) {
   // bands mode: rows [date, hour, audible, loud, veryLoud]; newest day on top
   const hourList = hourCols();
   const hours = hourList.map(h => String(h).padStart(2, "0"));
+  const now = new Date();
+  const p2 = n => String(n).padStart(2, "0");
+  const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+  const nowH = now.getHours();
   const days = [...new Set(rows.map(r => r[0]))].sort();
   const lookup = new Map(rows.map(([ds, h, b, y, r]) => [`${ds}-${h}`, [b, y, r]]));
   const data = [];
@@ -578,7 +586,9 @@ function drawDayHeatmap(id, rows, maxNOverride = null, showText = false) {
       const [b, y, r] = lookup.get(`${ds}-${h}`) ?? [0, 0, 0];
       // audible base segment: violet at night (22-07), green by day
       const baseCol = (h >= 22 || h <= 6) ? "#8b5cf6" : "#1a7f37";
-      data.push([x, yi, b + y + r, b, y, r, baseCol]);
+      // slot 8: greyscale marker for the actual day+hour cell
+      data.push([x, yi, b + y + r, b, y, r, baseCol,
+                 ds === today && h === nowH ? 1 : 0]);
     }
   });
   const maxN = maxNOverride ?? Math.max(...data.map(d2 => d2[2]), 1);
@@ -637,14 +647,19 @@ function drawWeekdayLoad(id, rows, maxLoad) {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const hourIdx = new Map(hourList.map((h, i) => [h, i]));
   const dayIdx = new Map(days.map((d, i) => [d, i]));
+  // cell of the actual weekday+hour → greyscale ramp instead of color
+  const now = new Date();
+  const nowWd = (now.getDay() + 6) % 7, nowH = now.getHours();
   const data = rows.map(([wd, h, v]) => {
     const night = +h >= 22 || +h <= 6;
-    const stops = night ? VIOLET_STOPS : GREEN_STOPS;
+    const yi = dayIdx.get(days[(Number(wd) + 6) % 7]);
+    const isNow = yi === nowWd && +h === nowH;
+    const stops = isNow ? GREY_STOPS : night ? VIOLET_STOPS : GREEN_STOPS;
     const t = Math.min(Math.max((v / maxLoad) * (stops.length - 1), 0), stops.length - 1.001);
     const seg = Math.floor(t), f = t - seg;
     const c = stops[seg].map((x, i2) => Math.round(x + (stops[seg + 1][i2] - x) * f));
     return {
-      value: [hourIdx.get(+h), dayIdx.get(days[(Number(wd) + 6) % 7]), v],
+      value: [hourIdx.get(+h), yi, v],
       itemStyle: { color: `rgb(${c[0]},${c[1]},${c[2]})` },
     };
   });
@@ -769,16 +784,6 @@ async function boot() {
     const b = e.target.closest(".nav-item");
     if (b) showView(b.dataset.view).catch(console.error);
   });
-  const syncThrTags = () => {
-    const cls = state.loudDb <= -50 ? "thr-blue"
-              : state.loudDb <= -42 ? "thr-yellow" : "thr-red";
-    document.querySelectorAll(".tag.thr").forEach(t => {
-      t.classList.remove("thr-blue", "thr-yellow", "thr-red");
-      t.classList.add(cls);
-      t.textContent = ">" + state.loudDb;
-    });
-  };
-  syncThrTags();
   window.addEventListener("resize", () => Object.values(charts).forEach(c => c.resize()));
 
   await showView("live");

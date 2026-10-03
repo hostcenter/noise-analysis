@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_events_event_ts ON events(event, ts);
+CREATE INDEX IF NOT EXISTS idx_events_peak ON events(spl_peak);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
@@ -559,7 +560,7 @@ _GROUP_RULES = [
     ("Other", ["aircraft", "airplane", "helicopter", "jet", "propeller"]),
     ("Other", ["music", "singing", "choir", "guitar", "piano", "organ", "drum", "violin", "cello", "orchestra", "flute", "trumpet", "trombone", "brass", "woodwind", "saxophone", "clarinet", "harp", "banjo", "mandolin", "marimba", "xylophone", "percussion", "timpani", "instrument", "opera", "techno", "jazz", "reggae"]),
     ("Motor", ["motor vehicle", "motorcycle", "car", "truck", "bus", "vehicle", "engine", "idling", "skidding", "accelerating", "revving", "vroom", "traffic", "tire", "brake", "driv"]),
-    ("Human", ["speech", "conversation", "voice", "whisper", "shout", "yell", "cry", "sob", "whimper", "sigh", "gasp", "snor", "breath", "cough", "sneeze", "hiccup", "chatter", "crowd", "laugh", "giggle", "baby", "child", "kid", "talk", "man", "woman", "male", "female", "human"]),
+    ("Human", ["speech", "conversation", "voice", "whisper", "shout", "yell", "scream", "cry", "sob", "whimper", "sigh", "gasp", "snor", "breath", "cough", "sneeze", "hiccup", "chatter", "crowd", "laugh", "giggle", "baby", "child", "kid", "talk", "man", "woman", "male", "female", "human"]),
     ("Human", ["bird", "pigeon", "dove", "crow", "caw", "coo", "chirp", "tweet", "owl", "hoot", "gull", "raven", "magpie", "wings", "duck", "goose", "animal", "cat", "meow", "purr", "caterwaul", "dog", "bark", "yip", "howl", "growl", "pets", "rodent", "insect", "bee", "wasp", "fly", "cricket", "frog", "snake", "fox", "horse", "livestock", "farm"]),
     ("Other", ["door", "slam", "glass", "tap", "knock", "clink", "chink", "thump", "thud", "crash", "splash", "camera", "mechanism", "switch", "button"]),
     ("Background", ["silence", "noise", "static", "rumble", "hum", "buzz", "field recording", "environmental", "vibration", "whoosh", "swoosh", "swish", "wind"]),
@@ -641,12 +642,12 @@ def compute_weekday_cache():
         }
         for key in grids_by_t
     }
-    # noise load per group: episodes x loudness accumulated over 3 weeks
+    # noise load per group: episodes x loudness above -60 dBFS noise floor accumulated over 3 weeks
     load_rows = q(
         """
         SELECT CAST(strftime('%w', ts, 'unixepoch', 'localtime') AS INTEGER),
                CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
-               event, ROUND(SUM(ABS(COALESCE(spl, -60))), 1)
+               event, ROUND(SUM(MAX(COALESCE(spl_peak, spl, -60) + 60, 0)), 1)
         FROM events
         WHERE ts >= strftime('%s', 'now') - 21 * 86400
         GROUP BY 1, 2, 3

@@ -43,6 +43,7 @@ services:
     volumes:
       - ./logs:/data/logs
       - ./dashboard/static:/app/static:ro  # live UI edits, no rebuild needed
+      - ./dashboard/version.txt:/app/version.txt:ro
       - ./.rclone:/backup-state:ro         # last-backup marker written by sync
     ports:
       - "127.0.0.1:8080:8080"
@@ -54,14 +55,15 @@ services:
     profiles:
       - full
     tmpfs:
-      - /tmp:size=256m
+      - /tmp:size=1024m
     volumes:
       - ./logs:/data/logs:ro
       - ./.rclone:/config/rclone
     entrypoint: >
       sh -c 'while true; do
-        mkdir -p /tmp/push;
+        rm -rf /tmp/push && mkdir -p /tmp/push;
         cp /data/logs/events.jsonl /data/logs/spl.jsonl /tmp/push/ 2>/dev/null;
         rclone copy /tmp/push r2:noise-logs && date +%s > /config/rclone/last-backup;
+        rm -rf /tmp/push/*;
         sleep 3600;
       done'

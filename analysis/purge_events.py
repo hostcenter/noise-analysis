@@ -28,7 +28,11 @@ def main():
     p.add_argument("to_ts", help="window end (exclusive)")
     p.add_argument("--tz", default=None,
                    help="IANA zone for the window (default: system local)")
-    p.add_argument("--log-dir", default=os.environ.get("LOG_DIR", "."))
+    default_log_dir = os.environ.get("LOG_DIR")
+    if not default_log_dir:
+        default_log_dir = "logs" if os.path.isdir("logs") else "."
+    p.add_argument("--log-dir", default=default_log_dir,
+                   help=f"log directory containing events.jsonl (default: {default_log_dir})")
     a = p.parse_args()
 
     tz = ZoneInfo(a.tz) if a.tz else datetime.now().astimezone().tzinfo
@@ -38,6 +42,8 @@ def main():
         p.error("window end must be after start")
 
     path = os.path.join(a.log_dir, "events.jsonl")
+    if not os.path.exists(path):
+        p.error(f"events file not found: {path}")
     kept = dropped = 0
     tmp = path + ".purge-tmp"
     with open(path) as src, open(tmp, "w") as dst:

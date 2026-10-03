@@ -34,49 +34,6 @@
   }
   .nav-item:hover { background: #eaeef2; }
   .nav-item.active { background: #2f6feb; color: #fff; }
-  .nav-item .tag {
-    float: right; font-size: 9px; padding: 1px 5px; border-radius: 8px;
-    margin-left: 4px; background: #eaeef2; color: #57606a; font-weight: 400;
-  }
-  .nav-item .tag.thr { background: #fff3bf; color: #8a6d00; }            /* default */
-  .nav-item .tag.thr.thr-blue { background: #e3f7e8; color: #1a7f37; }   /* >-60 */
-  .nav-item .tag.thr.thr-yellow { background: #fff3bf; color: #8a6d00; } /* >-45 */
-  .nav-item .tag.thr.thr-red { background: #ffebe9; color: #a40e26; }    /* >-40 */
-
-  /* radio buttons as colored pills — always colored, selected = bold + thick border */
-  .pill-group {
-    display: flex; flex-direction: column; align-items: flex-start;
-    gap: 3px; margin: 6px 4px 12px;
-  }
-  label.pill-radio {
-    display: flex; align-items: center; gap: 6px; cursor: pointer;
-    padding: 2px 12px; border-radius: 12px; font-size: 13px;
-    border: 2px solid transparent; font-weight: 400;
-  }
-  label.pill-radio input {
-    position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0;
-  }
-  /* base colors per option */
-  label.pill-radio:has(input[name="loud-db"][value="-60"]) {
-    background: #e3f7e8; color: #1a7f37;
-  }
-  label.pill-radio:has(input[name="loud-db"][value="-45"]) {
-    background: #fff3bf; color: #8a6d00;
-  }
-  label.pill-radio:has(input[name="loud-db"][value="-40"]) {
-    background: #ffebe9; color: #a40e26;
-  }
-  /* selected: bold + thick border in the strong tone */
-  label.pill-radio:has(input[name="loud-db"][value="-60"]:checked) {
-    font-weight: 700; border-color: #24292f;
-  }
-  label.pill-radio:has(input[name="loud-db"][value="-45"]:checked) {
-    font-weight: 700; border-color: #24292f;
-  }
-  label.pill-radio:has(input[name="loud-db"][value="-40"]:checked) {
-    font-weight: 700; border-color: #24292f;
-  }
-  .nav-item.active .tag { background: rgba(255,255,255,0.25); color: #fff; }
 
   .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   #updated { display: block; margin: -12px 8px 16px; color: #656d76; font-size: 12px; }
@@ -98,11 +55,6 @@
   body.wide main { max-width: none; }
   #dist3d { height: calc(100vh - 150px); }
   .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 8px; }
-  select, input[type=text] {
-    background: #eaeef2; color: #24292f; border: 1px solid #d0d7de;
-    border-radius: 6px; padding: 4px 8px; font-size: 13px;
-  }
-  #classes { min-width: 260px; min-height: 90px; }
   #readme-box {
     background: #ffffff; border: 1px solid #d0d7de; border-radius: 8px;
     padding: 18px 24px; max-width: 880px;
@@ -312,6 +264,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=234"></script>
+<script src="/app.js?v=235"></script>
 </body>
 </html>
