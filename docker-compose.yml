@@ -30,8 +30,6 @@ services:
     build:
       context: .
       dockerfile: dashboard/Dockerfile
-      args:
-        BUILD_DATE: ${BUILD_DATE:-}
     container_name: noise-dashboard
     restart: unless-stopped
     environment:

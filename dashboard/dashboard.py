@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS spl (
 );
 CREATE TABLE IF NOT EXISTS events (
   ts REAL, event TEXT, confidence REAL, spl REAL, duration REAL,
+  spl_peak REAL,
   UNIQUE(ts, event)
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
@@ -161,7 +162,7 @@ def event_row(e):
     _last_episode["ts"] = ts
     dur = e.get("duration_s")
     return (ts, e["event"], e.get("confidence"), e.get("spl_db"),
-            float(dur) if dur is not None else None)
+            float(dur) if dur is not None else None, e.get("spl_db_max"))
 
 
 def ingester(stop):
@@ -171,7 +172,10 @@ def ingester(stop):
     cols = [r[1] for r in con.execute("PRAGMA table_info(events)")]
     if "duration" not in cols:
         con.execute("ALTER TABLE events ADD COLUMN duration REAL")
+    if "spl_peak" not in cols:
+        con.execute("ALTER TABLE events ADD COLUMN spl_peak REAL")
     con.commit()
+    backfill_peaks(con)
     while not stop.is_set():
         try:
             n1 = tail_file(
@@ -183,7 +187,7 @@ def ingester(stop):
             n2 = tail_file(
                 con,
                 "events.jsonl",
-                "INSERT OR IGNORE INTO events VALUES (?,?,?,?,?)",
+                "INSERT OR IGNORE INTO events VALUES (?,?,?,?,?,?)",
                 event_row,
             )
             if n1 or n2:
@@ -194,6 +198,25 @@ def ingester(stop):
 
 
 # --------------------------------------------------------------------- API
+
+
+def backfill_peaks(con):
+    """Episodes logged before the analyzer wrote spl_db_max: derive the peak
+    from the per-second maxima in the spl table over [ts, ts + duration].
+    Runs at boot and only touches NULLs, so it self-heals after upgrades."""
+    n = con.execute(
+        """
+        UPDATE events SET spl_peak = (
+            SELECT MAX(spl_max) FROM spl
+            WHERE spl.ts >= events.ts
+              AND spl.ts <= events.ts + COALESCE(events.duration, 0)
+        )
+        WHERE spl_peak IS NULL AND duration IS NOT NULL
+        """
+    ).rowcount
+    con.commit()
+    if n:
+        print(f"backfilled spl_peak for {n} episodes", flush=True)
 
 _stop = threading.Event()
 
@@ -365,13 +388,15 @@ def api_hourly(
 
     if by == "daybands":
         # audible (<= BAND_LOUD), loud (BAND_LOUD..BAND_VERY), very loud (>= BAND_VERY)
+        # bands key off the episode's strict peak level (spl_peak; falls back
+        # to the confidence-moment spl for legacy rows without a peak)
         rows = q(
             """
             SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'),
                    CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
-                   SUM(CASE WHEN COALESCE(spl, -999) < :b1 THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN COALESCE(spl, -999) >= :b1 AND COALESCE(spl, -999) < :b2 THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN COALESCE(spl, -999) >= :b2 THEN 1 ELSE 0 END)
+                   SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) < :b1 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b1 AND COALESCE(COALESCE(spl_peak, spl), -999) < :b2 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b2 THEN 1 ELSE 0 END)
             """ + sql + " GROUP BY 1, 2 ORDER BY 1",
             {**params, "b1": BAND_LOUD, "b2": BAND_VERY},
         )
@@ -486,8 +511,9 @@ def api_classdist(
     from_: float = Query(alias="from"),
     to: float = Query(...),
 ):
-    """[event, 1dB bucket, nightCount, dayCount] over the range; buckets -60..-31
-    (i.e. spl in [-60, -30)). night = hours 22-06, day = 07-21 (local time)."""
+    """[event, 1dB bucket, nightCount, dayCount] over the range; buckets from
+    -60 dBFS up (no upper cap, loud events must not be cut off).
+    night = hours 22-06, day = 07-21 (local time)."""
     rows = q(
         """
         SELECT event,
@@ -504,7 +530,7 @@ def api_classdist(
         """,
         {"f": from_, "t": to},
     )
-    return {"rows": [[r[0], r[1], r[2], r[3]] for r in rows if -60 <= r[1] <= -31]}
+    return {"rows": [[r[0], r[1], r[2], r[3]] for r in rows if r[1] >= -60]}
 
 
 # ---------------------------------------------------------------- weekday cache
@@ -692,7 +718,8 @@ def api_louddist(
 
 @app.get("/api/meta")
 def api_meta():
-    # sidebar footer: code version (stamped at image build) + date of the
+    # sidebar footer: code version (date of the committed code, written by
+    # the post-commit hook into version.txt) + date of the
     # last successful off-site backup (epoch marker written by the sync
     # service into the .rclone bind mount)
     def read_text(path):

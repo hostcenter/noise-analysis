@@ -190,6 +190,7 @@ def run_loop(frames, yam, hann, freqs, a_weight, class_names):
     last_event = 0.0
     ep_start = None      # episode in progress: start ts
     ep_best = None       # (class idx, confidence, spl) at the loudest moment
+    ep_peak = None       # strict max frame SPL over the whole episode
     ep_last_loud = None  # last ts with a loud frame
     spl_vals = []
     bands = {}
@@ -228,17 +229,21 @@ def run_loop(frames, yam, hann, freqs, a_weight, class_names):
                 if now - last_event >= EPISODE_REFRACTORY:
                     ep_start = now
                     ep_best = (best, float(scores[best]), dba)
+                    ep_peak = dba
                     ep_last_loud = now
             else:
                 ep_last_loud = now
                 if scores[best] > ep_best[1]:
                     ep_best = (best, float(scores[best]), dba)
+            if ep_start is not None:
+                ep_peak = max(ep_peak, dba)
             # cap: force-log episodes that never go quiet
             if ep_start is not None and now - ep_start >= EPISODE_MAX:
                 ep_last_loud = now
         elif ep_start is not None and now - ep_last_loud >= EPISODE_QUIET:
             # episode over (quiet for EPISODE_QUIET seconds) → write it with
-            # its duration; ts = episode start, type/conf/spl at the loudest
+            # its duration; ts = episode start, type/conf/spl at the loudest,
+            # spl_db_max = strict peak level over all episode frames
             last_event = ep_start
             last_logged[ep_best[0]] = ep_start
             bi, bconf, bspl = ep_best
@@ -251,11 +256,13 @@ def run_loop(frames, yam, hann, freqs, a_weight, class_names):
                     "event": class_names[int(bi)],
                     "confidence": round(bconf, 3),
                     "spl_db": bspl,
+                    "spl_db_max": round(ep_peak, 1),
                     "duration_s": round(ep_last_loud - ep_start, 1),
                 },
             )
             ep_start = None
             ep_best = None
+            ep_peak = None
         if RUN_SECONDS > 0 and time.time() - start >= RUN_SECONDS:
             break
 

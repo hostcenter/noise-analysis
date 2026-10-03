@@ -11,13 +11,13 @@ COPY dashboard/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY dashboard/dashboard.py /app/dashboard.py
+COPY analysis/purge_events.py /app/purge_events.py
 COPY dashboard/static /app/static
 
-# build timestamp (dd.mm.yyyy - hh:mm, UTC) shown in the sidebar footer;
-# override with BUILD_DATE="$(git log -1 --format=%cd --date=format:'%d.%m.%Y - %H:%M')"
-# to stamp the code date instead of the image build date
-ARG BUILD_DATE=""
-RUN printf '%s' "${BUILD_DATE:-$(date '+%d.%m.%Y - %H:%M')}" > /app/version.txt
+# sidebar version stamp = date of the committed code; dashboard/version.txt
+# is refreshed by the post-commit hook (.githooks/, enable with
+# git config core.hooksPath .githooks) and travels with the repo
+COPY dashboard/version.txt /app/version.txt
 
 ENV LOG_DIR=/data/logs
 ENV DB_PATH=/data/logs/dashboard.db

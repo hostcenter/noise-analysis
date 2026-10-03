@@ -1,0 +1,7 @@
+#!/bin/sh
+# keep the dashboard's version stamp in sync with the committed code:
+# after each commit, write that commit's date into dashboard/version.txt
+# (which the dashboard image COPYs at build time) and stage it for the
+# next commit. Enable once per clone:  git config core.hooksPath .githooks
+git log -1 --format=%cd --date=format:'%d.%m.%Y - %H:%M' > dashboard/version.txt
+git add dashboard/version.txt
