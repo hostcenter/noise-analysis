@@ -84,44 +84,43 @@
 <aside>
   <h1>Nachtunruhe</h1>
   <nav id="nav">
-    <button class="nav-item active" data-view="day3w">Hour of day (3w)</button>
+    <button class="nav-item active" data-view="heatmap">Average noise level (3w)</button>
+    <button class="nav-item" data-view="day3w">Hourly episodes (3w)</button>
     <button class="nav-item" data-view="loudveh">Loud Vehicles (3w)</button>
-    <button class="nav-item" data-view="heatmap">Av. weekday per hour (3w)</button>
-    <button class="nav-item" data-view="loudest">Loudest vehicles (7d)</button>
-    <button class="nav-item" data-view="threed">Weekday-h-dB (7d)</button>
+    <button class="nav-item" data-view="loudest">Loudest vehicles (3w)</button>
+    <button class="nav-item" data-view="threed">3D View</button>
     <button class="nav-item" data-view="live">Last 5 min</button>
     <button class="nav-item" data-view="readme">Readme</button>
   </nav>
   <div id="meta-footer">
-    <a id="meta-version" href="https://github.com/hostcenter/noise-analysis"
-       target="_blank" rel="noopener">Version —</a>
+    <span id="meta-version">Version —</span>
     <span id="meta-backup">Backup —</span>
   </div>
 </aside>
 
 <div class="content">
   <main>
-    <section id="view-day3w">
-      <h2>Hour of day (3w)</h2>
+    <section id="view-heatmap">
+      <h2>Average noise level (3w)</h2>
+      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · noise load (episode loudness accumulated) per hour × weekday · last 3 weeks · brighter = more load.</div>
+      <div id="heatmap-list"></div>
+    </section>
+
+    <section id="view-day3w" hidden>
+      <h2>Hourly episodes (3w)</h2>
       <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · episodes per hour of day, one row per day · raw counts, no averaging · last 3 weeks · band per episode peak level: green audible, yellow loud, red very loud.</div>
       <div id="day3w-list"></div>
     </section>
 
     <section id="view-loudveh" hidden>
       <h2>Loud Vehicles (3w)</h2>
-      <div class="hint" style="margin-bottom:8px">One grid for the Motor group, like Hour of day (3w) · only loud (yellow) and very loud (red) episodes shown · number = such episodes in that hour · last 3 weeks.</div>
+      <div class="hint" style="margin-bottom:8px">One grid for the Motor group, like Hourly episodes (3w) · only loud (yellow) and very loud (red) episodes shown · number = such episodes in that hour · last 3 weeks.</div>
       <div id="loudveh-chart" class="chart"></div>
     </section>
 
-    <section id="view-heatmap" hidden>
-      <h2>When does it happen? (hour × weekday)</h2>
-      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · noise load (episode loudness accumulated) per hour × weekday · last 3 weeks · brighter = more load.</div>
-      <div id="heatmap-list"></div>
-    </section>
-
     <section id="view-loudest" hidden>
-      <h2>Loudest vehicles (7d)</h2>
-      <div class="hint" style="margin-bottom:8px">All vehicle episodes (Motor group) above 62 dB peak in the last seven days, loudest first · times as HH:mm (24 h) · rows at 22-06h highlighted red.</div>
+      <h2>Loudest vehicles (3w)</h2>
+      <div class="hint" style="margin-bottom:8px">All vehicle episodes (Motor group) above 67 dB peak in the last three weeks, loudest first · times as HH:mm (24 h) · rows at 22-06h highlighted red.</div>
       <table id="loud-table">
         <thead>
           <tr><th>dB</th><th>Weekday</th><th>Time</th><th>Date</th></tr>
@@ -156,6 +155,10 @@
         (a car, a voice, a bird, music…). Think of it as a librarian who
         listens to the street and only takes notes, never recordings.</p>
 
+        <h3>Source code</h3>
+        <p>Nachtunruhe is open source. Find the code at
+        <a href="https://github.com/hostcenter/noise-analysis" target="_blank" rel="noopener">github.com/hostcenter/noise-analysis</a>.</p>
+
         <h3>Why does it exist?</h3>
         <p>When a loud motorcycle wakes you up at 2&nbsp;a.m., the natural
         questions are: <i>How often does this happen? Every night or just
@@ -167,32 +170,32 @@
         <h3>The views at a glance</h3>
         <table>
           <tr><th>View</th><th>What you see</th><th>Question it answers</th></tr>
-          <tr><td><b>Hour of day (3w)</b></td><td>One grid, all noise types
-              pooled: one row per day, hours across. Each cell stacks the
-              episodes of that hour, banded by their <b>peak level</b> —
-              green = audible, yellow = loud, red = very loud. Night
-              columns are tinted light violet, day columns light green.</td>
-              <td>"Which days and hours were noisy — and how loud?"</td></tr>
-          <tr><td><b>Loud Vehicles (3w)</b></td><td>Same grid as Hour of day (3w)
-              but only for the <b>Motor</b> family, and only episodes whose
-              peak reached the loud (yellow, 62&nbsp;dB+) or very loud (red,
-              67&nbsp;dB+) range. The number in a cell = such episodes in
-              that hour.</td>
-              <td>"When do the really loud vehicles pass?"</td></tr>
-          <tr><td><b>Av. weekday per hour (3w)</b></td><td>One grid, all noise types
+          <tr><td><b>Average noise level (3w)</b></td><td>One grid, all noise types
               pooled: hours across, weekdays down, last three weeks. Each
               cell shows the accumulated noise load — brighter means more
               load. Night columns (22–06) are tinted light violet, day
               columns light green.</td>
               <td>"What does a typical week look like?"</td></tr>
-          <tr><td><b>Loudest vehicles (7d)</b></td><td>All vehicle
-              episodes (Motor family) whose peak level reached 62&nbsp;dB in
-              the last seven days, loudest first — the view title shows how
+          <tr><td><b>Hourly episodes (3w)</b></td><td>One grid, all noise types
+              pooled: one row per day, hours across. Each cell stacks the
+              episodes of that hour, banded by their <b>peak level</b> —
+              green = audible, yellow = loud, red = very loud. Night
+              columns are tinted light violet, day columns light green.</td>
+              <td>"Which days and hours were noisy — and how loud?"</td></tr>
+          <tr><td><b>Loud Vehicles (3w)</b></td><td>Same grid as Hourly episodes (3w)
+              but only for the <b>Motor</b> family, and only episodes whose
+              peak reached the loud (yellow, 62&nbsp;dB+) or very loud (red,
+              67&nbsp;dB+) range. The number in a cell = such episodes in
+              that hour.</td>
+              <td>"When do the really loud vehicles pass?"</td></tr>
+          <tr><td><b>Loudest vehicles (3w)</b></td><td>All vehicle
+              episodes (Motor family) whose peak level reached 67&nbsp;dB in
+              the last three weeks, loudest first — the view title shows how
               many there are. Loudness, weekday, time, and date;
               cells tinted by loudness range; night rows (22:00–06:59) have
               a violet time cell.</td>
               <td>"Which vehicles were the loudest recently?"</td></tr>
-          <tr><td><b>Weekday-h-dB (7d)</b></td><td>A floating dot cloud over
+          <tr><td><b>3D View</b></td><td>A floating dot cloud over
               hour of day, weekday, and loudness (last 7 days). Dot size =
               number of episodes; color = loudness range (green audible,
               yellow loud, red very loud; quiet night dots violet). The
@@ -254,6 +257,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=248"></script>
+<script src="/app.js?v=253"></script>
 </body>
 </html>

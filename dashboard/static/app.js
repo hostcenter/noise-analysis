@@ -185,13 +185,13 @@ async function loadLoudList() {
   const to = Date.now() / 1000;
   await loadCounts();  // fills state.groupMembers
   const members = (state.groupMembers.Motor || []).join(";");
-  // every vehicle episode of the last 7 days whose peak reached 62 dB SPL
+  // every vehicle episode of the last 3 weeks whose peak reached 67 dB SPL
   const d = await get("/api/loudest", {
-    from: to - 7 * 86400, to, event: members,
-    min_db: (62 - DB_OFFSET).toFixed(1), limit: 20000,
+    from: to - 21 * 86400, to, event: members,
+    min_db: (67 - DB_OFFSET).toFixed(1), limit: 20000,
   });
   document.querySelector("#view-loudest h2").textContent =
-    `${d.rows.length} Loudest vehicles (7d)`;
+    `${d.rows.length} Loudest vehicles (3w)`;
   document.getElementById("loud-body").innerHTML = d.rows.length
     ? d.rows.map(r => {
         const dt = new Date(r[0] * 1000);
@@ -593,15 +593,15 @@ async function loadHeatmapView() {
 /* ---------------------------------------------------------- view switching */
 
 const VIEW_LOADERS = {
+  heatmap: loadHeatmapView,
   day3w: loadDay3w,
   loudveh: loadLoudVehicles,
-  heatmap: loadHeatmapView,
   loudest: loadLoudList,
   threed: loadThreed,
   live: loadLive,
   readme: async () => {},  // static content, nothing to load
 };
-let activeView = "day3w";
+let activeView = "heatmap";
 
 async function showView(name) {
   if (!VIEW_LOADERS[name]) return;
@@ -666,7 +666,7 @@ async function boot() {
   });
   window.addEventListener("resize", () => Object.values(charts).forEach(c => c.resize()));
 
-  await showView("day3w");
+  await showView("heatmap");
   // only the Last-5-min strip auto-refreshes; all other views load on entry
   setInterval(() => {
     if (activeView === "live") loadLive().catch(console.error);
