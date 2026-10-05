@@ -175,61 +175,6 @@ async function loadCounts() {
   return names;
 }
 
-async function loadClassDist() {
-  const to = Date.now() / 1000;
-  const d = await get("/api/classdist", { from: to - 21 * 86400, to });
-  // rows: [event, bucket(dBFS), night, day] → pool all noise types;
-  // 1-dB rows from 47 up to 75 dB, everything louder pooled into ">75 dB"
-  const rowsDbfs = Array.from({ length: -32 - (-60) + 1 }, (_, i) => -60 + i);
-  const rowLabels = rowsDbfs.map(b => String(Math.round(b + DB_OFFSET)) + " dB");
-  const OVERFLOW = -31;              // pseudo bucket: buckets ≥ -31 → ">75 dB"
-  rowLabels.push(">75 dB");
-  const byBucket = new Map();
-  for (const [ev, b, night, day] of d.rows) {
-    if (EXCLUDED_GROUPS.has(groupOf(ev))) continue;
-    const cur = byBucket.get(b) || [0, 0];
-    cur[0] += night; cur[1] += day;
-    byBucket.set(b, cur);
-  }
-  const data = [];
-  let maxN = 1;
-  const pushRow = (b, yi, night, day) => {
-    maxN = Math.max(maxN, night + day);
-    // stacked: violet night below, green day on top; 7th slot = bucket dBFS
-    data.push([0, yi, night, day, "#6b21a8", "#1a7f37", b]);
-  };
-  rowsDbfs.forEach((b, yi) => {
-    const [night, day] = byBucket.get(b) ?? [0, 0];
-    pushRow(b, yi, night, day);
-  });
-  let ovNight = 0, ovDay = 0;
-  for (const [b, [night, day]] of byBucket) {
-    if (b >= OVERFLOW) { ovNight += night; ovDay += day; }
-  }
-  pushRow(OVERFLOW, rowsDbfs.length, ovNight, ovDay);
-  const el = document.getElementById("classdist");
-  el.style.height = `${rowsDbfs.length * 18 + 50}px`;
-  const chart = mkChart("classdist");
-  chart.setOption({
-    animation: false,
-    grid: { left: 48, right: 16, top: 16, bottom: 28 },
-    tooltip: { formatter: p =>
-      `${rowLabels[p.value[1]]}<br>` +
-      `<b>${p.value[2] + p.value[3]}</b> events · ${p.value[2]} night / ${p.value[3]} day` },
-    xAxis: { type: "category", data: ["All events"],
-             axisLabel: { color: "#57606a" } },
-    yAxis: { type: "category", data: rowLabels,
-             axisLabel: { color: "#57606a", fontSize: 10 } },
-    series: [{ type: "custom", encode: { x: 0, y: 1 }, data,
-               renderItem: fillCellsRender(maxN, true, "loudness-bands") }],
-  });
-  chart.resize();
-}
-
-async function loadEventsView() {
-  await loadClassDist();
-}
-
 async function loadThreed() {
   await loadDist3D();
 }
@@ -252,17 +197,17 @@ async function loadLoudList() {
         const dt = new Date(r[0] * 1000);
         const h24 = dt.getHours();
         const night = h24 >= 22 || h24 <= 6;  // 22:00–06:59
-        const h = String(h24).padStart(2, "0") + "h";
+        const p = n => String(n).padStart(2, "0");
+        const timeStr = `${p(h24)}:${p(dt.getMinutes())}`;
         const dbBg = r[3] >= -40 ? "#ffebe9" : r[3] >= -45 ? "#fff3bf" : "#e7f0fe";
         const timeBg = night ? "#f3e8ff" : "#e3f7e8";
         return `<tr${night ? ' class="night"' : ""}>` +
                `<td style="background:${dbBg}">${(r[3] + DB_OFFSET).toFixed(1)}</td>` +
-               `<td>${r[1]}</td>` +
                `<td>${WDAYS[dt.getDay()]}</td>` +
-               `<td style="background:${timeBg}">${h}</td>` +
+               `<td style="background:${timeBg}">${timeStr}</td>` +
                `<td>${fmtDate(r[0] * 1000)}</td></tr>`;
       }).join("")
-    : "<tr><td colspan='5'>none yet — no vehicle episodes recorded</td></tr>";
+    : "<tr><td colspan='4'>none yet — no vehicle episodes recorded</td></tr>";
 }
 
 const dist3dState = { data: [], info: new Map() };
@@ -408,9 +353,6 @@ function stopWeekdayCycle() {
 // last 3 weeks; violet scale for night columns (22-06), green for day (07-22)
 function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
   // bg "hours-violet": night columns 22-06 light violet, day 07-22 light green
-  // Loudness data [x, y, night, day, violet, green]:
-  //   stacked violet night below + green day on top; buckets < 62 dB show
-  //   the day and night counts as two separate green/violet numbers
   return (params, api) => {
     const [cx, cy] = api.coord([api.value(0), api.value(1)]);
     const w = api.size([1, 0])[0];
@@ -431,12 +373,6 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
       if (nowCell) bgFill = "#ebebeb";           // actual hour: neutral grey
       else if (hr !== undefined && (hr >= 22 || hr <= 6)) bgFill = "#f3e8ff";
       else bgFill = "#e3f7e8";   // 07-22: light green
-    } else if (bg === "loudness-bands") {
-      // same tints as the Last-5-min strip: green audible, yellow loud, red very loud
-      const spl = (typeof v6 === "number" ? v6 : -60 + v0) + DB_OFFSET;
-      bgFill = spl < 62 ? "rgba(26,127,55,0.07)"
-             : spl < 67 ? "rgba(245,159,0,0.09)"
-             : "rgba(207,34,46,0.07)";
     }
     const children = [{
       type: "rect", z2: 1,
@@ -447,57 +383,7 @@ function fillCellsRender(maxN, showText = true, bg = null, hourList = null) {
       },
     }];
     const unit = h - 2 * g;
-    if (typeof v4 === "string" && typeof v5 === "string") {
-      // Loudness: horizontal bar filled left to right — violet night
-      // segment first, green day segment after it
-      const unitW = w - 2 * g;
-      const nightW = unitW * (v2 / maxN);
-      const dayW = unitW * (v3 / maxN);
-      if (nightW > 0.5) {
-        children.push({
-          type: "rect", z2: 2,
-          shape: { x: x + g, y: y + g, width: nightW, height: h - 2 * g },
-          style: { fill: v4 },
-        });
-      }
-      if (dayW > 0.5) {
-        children.push({
-          type: "rect", z2: 2,
-          shape: { x: x + g + nightW, y: y + g, width: dayW, height: h - 2 * g },
-          style: { fill: v5 },
-        });
-      }
-      // buckets below 62 dB SPL: two numbers (green day, violet night);
-      // bucket dBFS rides in the 7th slot when the axis is flipped.
-      // numbers sit right of the bar end (white when clamped onto the bar)
-      const splBucket = (typeof v6 === "number" ? v6 : -60 + v0) + DB_OFFSET;
-      const p = t => String(Math.round(t));
-      const barEnd = x + g + nightW + dayW;
-      const tx = Math.min(barEnd + 6, x + w - 12);
-      const txtFill = tx < barEnd + 2 ? "#ffffff" : "#24292f";
-      if (showText && v2 + v3 > 0 && splBucket < 62) {
-        children.push({
-          type: "text", z2: 4, silent: true,
-          style: { text: p(v3), x: tx, y: cy - 7,
-                   fill: tx < barEnd + 2 ? "#ffffff" : "#1a7f37",
-                   font: "10px sans-serif", align: "left" },
-        });
-        children.push({
-          type: "text", z2: 4, silent: true,
-          style: { text: p(v2), x: tx, y: cy + 7,
-                   fill: tx < barEnd + 2 ? "#ffffff" : "#6b21a8",
-                   font: "10px sans-serif", align: "left" },
-        });
-      } else if (showText && v2 + v3 > 0) {
-        children.push({
-          type: "text", z2: 4, silent: true,
-          style: {
-            text: String(v2 + v3), x: tx, y: cy, fill: txtFill,
-            font: "11px sans-serif", align: "left", verticalAlign: "middle",
-          },
-        });
-      }
-    } else if (typeof v3 === "number" && typeof v4 === "number" && typeof v5 === "number") {
+    if (typeof v3 === "number" && typeof v4 === "number" && typeof v5 === "number") {
       // three-band stack: green audible base, yellow loud middle, red very-loud top
       const bH = unit * (v3 / maxN);
       const yH = unit * (v4 / maxN);
@@ -707,16 +593,15 @@ async function loadHeatmapView() {
 /* ---------------------------------------------------------- view switching */
 
 const VIEW_LOADERS = {
-  live: loadLive,
-  events: loadEventsView,
-  threed: loadThreed,
-  heatmap: loadHeatmapView,
   day3w: loadDay3w,
   loudveh: loadLoudVehicles,
+  heatmap: loadHeatmapView,
   loudest: loadLoudList,
+  threed: loadThreed,
+  live: loadLive,
   readme: async () => {},  // static content, nothing to load
 };
-let activeView = "live";
+let activeView = "day3w";
 
 async function showView(name) {
   if (!VIEW_LOADERS[name]) return;
@@ -736,7 +621,7 @@ async function showView(name) {
   });
   // the live strip is 1920px tall → land at the top (newest end) after render
   await VIEW_LOADERS[name]();
-  if (name === "live") window.scrollTo(0, 0);
+  window.scrollTo(0, 0);
 }
 
 /* ------------------------------------------------- sidebar footer (meta) */
@@ -781,7 +666,7 @@ async function boot() {
   });
   window.addEventListener("resize", () => Object.values(charts).forEach(c => c.resize()));
 
-  await showView("live");
+  await showView("day3w");
   // only the Last-5-min strip auto-refreshes; all other views load on entry
   setInterval(() => {
     if (activeView === "live") loadLive().catch(console.error);

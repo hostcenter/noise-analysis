@@ -768,7 +768,9 @@ async def no_cache_static(request, call_next):
     # cheap 304 when unchanged).
     resp = await call_next(request)
     if not request.url.path.startswith("/api/"):
-        resp.headers["Cache-Control"] = "no-cache"
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
     return resp
 
 
