@@ -212,6 +212,13 @@ async function loadLoudList() {
 
 const dist3dState = { data: [], info: new Map() };
 
+// logarithmic loudness axis for 3D: plot log(dB - 57 + 1) so 57→0, 82→log26
+const DB_MIN_3D = 57;
+const DB_MAX_3D = 82;
+const toLog3D = db => Math.log(Math.max(db - DB_MIN_3D + 1, 1));
+const fromLog3D = val => Math.exp(val) - 1 + DB_MIN_3D;
+const Z_TICKS_3D = [57, 62, 67, 72, 77, 82].map(toLog3D);
+
 async function loadDist3D() {
   const to = Date.now() / 1000;
   const d = await get("/api/weekcounts",
@@ -223,6 +230,7 @@ async function loadDist3D() {
   for (const [wd, h, cls, n, avg, max, dur, loud] of d.rows) {
     const g = groupOf(cls);
     if (EXCLUDED_GROUPS.has(g)) continue;
+    if (avg != null && (avg + DB_OFFSET) < DB_MIN_3D) continue;
     groups.set(g, (groups.get(g) || 0) + n);
     const key = `${g}|${wd}|${h}`;
     const cur = cells.get(key) || { n: 0, splSum: 0, max: -999, dur: 0 };
@@ -250,18 +258,21 @@ async function loadDist3D() {
     const x = +h;                                         // always 00-24
     const y = (Number(wd) + 6) % 7;
     const z = entry.splSum / entry.n + DB_OFFSET;         // avg loudness (dB SPL)
+    if (z < DB_MIN_3D) continue;
     // loudness color code; quiet dots are violet at night (22-07)
     const color = z >= 67 ? "#cf222e"
                 : z >= 62 ? "#f59f00"
                 : (h >= 22 || h <= 6) ? "#8b5cf6" : "#1a7f37";
     const isNow = Number(wd) === nowWd && Number(h) === nowH;
+    const zLog = toLog3D(z);
     data.push({
-      value: [x, y, z, entry.n],
+      value: [x, y, zLog, entry.n],
       symbolSize: 2 + Math.sqrt(entry.n) * 2.5,
       isNow, baseSize: 2 + Math.sqrt(entry.n) * 2.5,
       itemStyle: { color, opacity: 0.85 },
+      meta: [g, wd, h, entry.max, entry.dur, entry.n, z],
     });
-    info.set(`${x}|${y}|${z}`, [g, wd, h, entry.max, entry.dur, entry.n]);
+    info.set(`${x}|${y}|${zLog}`, [g, wd, h, entry.max, entry.dur, entry.n, z]);
   }
   dist3dState.data = data;
   dist3dState.info = info;
@@ -289,12 +300,15 @@ function applyDist3D() {
     animation: false,
     tooltip: {
       formatter: p => {
-        const [g, wd, h, peak, dur, total] = info.get(`${p.value[0]}|${p.value[1]}|${p.value[2]}`) || ["?", 0, 0, 0, 0, 0];
+        const meta = (p.data && p.data.meta) ||
+                     info.get(`${p.value[0]}|${p.value[1]}|${p.value[2]}`) ||
+                     ["?", 0, 0, 0, 0, 0];
+        const [g, wd, h, peak, dur, total] = meta;
         const dte = dayDate.get((Number(wd) + 6) % 7);
         const ds = fmtDate(dte.getTime());
         const hh = String(h).padStart(2, "0");
         return `${ds} ${hh}:00 · ${g}<br>` +
-               `peak ${(+peak).toFixed(1)} dB · ${Math.round(dur)} s total`;
+               `peak ${(peak + DB_OFFSET).toFixed(1)} dB · ${Math.round(dur)} s total`;
       },
     },
     xAxis3D: { type: "value", min: 0, max: 24, interval: 4, name: "hour",
@@ -303,10 +317,13 @@ function applyDist3D() {
     yAxis3D: { type: "category", data: days, name: "weekday",
                axisLabel: { textStyle: { color: "#57606a", fontSize: 10 } } },
     zAxis3D: { type: "value",
-               min: 40,
-               max: 70,
+               min: 0,
+               max: toLog3D(DB_MAX_3D),
                name: "dB",
-               axisLabel: { formatter: v => Math.round(v),
+               axisTick: { customValues: Z_TICKS_3D },
+               splitLine: { customValues: Z_TICKS_3D, lineStyle: { color: "#eaeef2" } },
+               axisLabel: { customValues: Z_TICKS_3D,
+                            formatter: v => Math.round(fromLog3D(v)),
                             textStyle: { color: "#57606a", fontSize: 10 } } },
     grid3D: {
       boxWidth: 140, boxDepth: 90, boxHeight: 180,
@@ -522,39 +539,59 @@ async function loadLoudVehicles() {
   drawDayHeatmap("loudveh-chart", rows, null, true);
 }
 
-function drawWeekdayLoad(id, rows, maxLoad) {
+function lastSevenDayDates() {
+  // map weekday 0=Sun..6=Sat -> date string of that weekday in the last 7
+  // calendar days (today + the previous 6), matching the backend window;
+  // each weekday occurs exactly once, so the mapping is unambiguous
+  const now = new Date();
+  const p2 = n => String(n).padStart(2, "0");
+  const m = new Map();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const ds = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+    if (!m.has(d.getDay())) m.set(d.getDay(), ds);
+  }
+  return m;
+}
+
+function drawDayLoad(id, rows, maxLoad) {
+  // rows: [date, hour, v]; one row per day of the last 7 days, newest on top
   const hourList = hourCols();
   const hours = hourList.map(h => String(h).padStart(2, "0"));
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const hourIdx = new Map(hourList.map((h, i) => [h, i]));
-  const dayIdx = new Map(days.map((d, i) => [d, i]));
-  // cell of the actual weekday+hour → greyscale ramp instead of color
+  const days = [...new Set(rows.map(r => r[0]))].sort();
+  const lookup = new Map(rows.map(([ds, h, v]) => [`${ds}-${h}`, v]));
+  // cell of the actual day+hour → greyscale ramp instead of color
   const now = new Date();
-  const nowWd = (now.getDay() + 6) % 7, nowH = now.getHours();
-  const data = rows.map(([wd, h, v]) => {
-    const night = +h >= 22 || +h <= 6;
-    const yi = dayIdx.get(days[(Number(wd) + 6) % 7]);
-    const isNow = yi === nowWd && +h === nowH;
-    const stops = isNow ? GREY_STOPS : night ? VIOLET_STOPS : GREEN_STOPS;
-    const t = Math.min(Math.max((v / maxLoad) * (stops.length - 1), 0), stops.length - 1.001);
-    const seg = Math.floor(t), f = t - seg;
-    const c = stops[seg].map((x, i2) => Math.round(x + (stops[seg + 1][i2] - x) * f));
-    return {
-      value: [hourIdx.get(+h), yi, v],
-      itemStyle: { color: `rgb(${c[0]},${c[1]},${c[2]})` },
-    };
+  const p2 = n => String(n).padStart(2, "0");
+  const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+  const nowH = now.getHours();
+  const data = [];
+  days.forEach((ds, yi) => {
+    for (const h of hourList) {
+      const v = lookup.get(`${ds}-${h}`) ?? 0;
+      const night = +h >= 22 || +h <= 6;
+      const isNow = ds === today && +h === nowH;
+      const stops = isNow ? GREY_STOPS : night ? VIOLET_STOPS : GREEN_STOPS;
+      const t = Math.min(Math.max((v / maxLoad) * (stops.length - 1), 0), stops.length - 1.001);
+      const seg = Math.floor(t), f = t - seg;
+      const c = stops[seg].map((x, i2) => Math.round(x + (stops[seg + 1][i2] - x) * f));
+      data.push({
+        value: [hourIdx.get(+h), yi, v],
+        itemStyle: { color: `rgb(${c[0]},${c[1]},${c[2]})` },
+      });
+    }
   });
+  const labels = dayLabels(days);
   mkChart(id).setOption({
     animation: false,
-    grid: { left: 48, right: 16, top: 26, bottom: 16 },
+    grid: { left: 86, right: 16, top: 26, bottom: 16 },
     tooltip: {
-      formatter: p => `${days[p.value[1]]} ${hours[p.value[0]]}:00\u2013${hours[p.value[0]]}:59<br>` +
-                      `noise load <b>${p.value[2]}</b>`,
+      formatter: p => `${labels[p.value[1]]}, ${hours[p.value[0]]}:00\u2013${hours[p.value[0]]}:59<br>` +
+                      `noise level <b>${p.value[2]}</b>`,
     },
     xAxis: { type: "category", data: hours, position: "top" },
-    // inverse → first row (Mon) on top, reading top-down Mon…Sun
-    yAxis: { type: "category", data: days, inverse: true,
-             axisLabel: { color: "#57606a" } },
+    yAxis: { type: "category", data: labels, axisLabel: { color: "#57606a" } },
     series: [{ type: "heatmap", data }],
   });
 }
@@ -569,25 +606,31 @@ async function loadHeatmapView() {
   const cont = document.getElementById("heatmap-list");
   disposeChartsIn(cont);
   cont.innerHTML = "";
-  // pool the per-group noise-load grids into one (Background already
-  // excluded server-side); noise load is additive, so sums are valid
+  // pool the per-group noise-level grids into one (Background already
+  // excluded server-side); noise level is additive, so sums are valid.
+  // Backend rows are [weekday 0=Sun..6=Sat, hour, load] over the last 7
+  // calendar days; each weekday occurs once, so map weekday -> its date.
+  const dayDate = lastSevenDayDates();
   const merged = new Map();
   for (const cells of Object.values(state.weekdayPayload.load || {})) {
     for (const [wd, h, v] of cells) {
-      const k = `${wd}|${h}`;
+      const date = dayDate.get(wd);
+      if (!date) continue;
+      const k = `${date}|${h}`;
       merged.set(k, (merged.get(k) || 0) + v);
     }
   }
   const grid = [...merged].map(([k, v]) => {
-    const [wd, h] = k.split("|").map(Number);
-    return [wd, h, Math.round(v * 10) / 10];
+    const date = k.slice(0, 10);
+    const h = Number(k.slice(11));
+    return [date, h, Math.round(v * 10) / 10];
   });
   const maxLoad = Math.max(1, ...grid.map(x => x[2]));
   const div = document.createElement("div");
   div.id = "hm-all";
   div.className = "chart";
   cont.append(div);
-  drawWeekdayLoad("hm-all", grid, maxLoad);
+  drawDayLoad("hm-all", grid, maxLoad);
 }
 
 /* ---------------------------------------------------------- view switching */

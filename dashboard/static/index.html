@@ -84,11 +84,11 @@
 <aside>
   <h1>Nachtunruhe</h1>
   <nav id="nav">
-    <button class="nav-item active" data-view="heatmap">Average noise level (3w)</button>
+    <button class="nav-item active" data-view="heatmap">Noise level (7d)</button>
     <button class="nav-item" data-view="day3w">Hourly episodes (3w)</button>
     <button class="nav-item" data-view="loudveh">Loud Vehicles (3w)</button>
     <button class="nav-item" data-view="loudest">Loudest vehicles (3w)</button>
-    <button class="nav-item" data-view="threed">3D View</button>
+    <button class="nav-item" data-view="threed">3D &gt;57 dB (7d)</button>
     <button class="nav-item" data-view="live">Last 5 min</button>
     <button class="nav-item" data-view="readme">Readme</button>
   </nav>
@@ -101,8 +101,8 @@
 <div class="content">
   <main>
     <section id="view-heatmap">
-      <h2>Average noise level (3w)</h2>
-      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · noise load (episode loudness accumulated) per hour × weekday · last 3 weeks · brighter = more load.</div>
+      <h2>Noise level (last 7 days)</h2>
+      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · episode loudness above the noise floor, summed per hour, one row per day · raw, no averaging · last 7 days · brighter = more load.</div>
       <div id="heatmap-list"></div>
     </section>
 
@@ -170,12 +170,13 @@
         <h3>The views at a glance</h3>
         <table>
           <tr><th>View</th><th>What you see</th><th>Question it answers</th></tr>
-          <tr><td><b>Average noise level (3w)</b></td><td>One grid, all noise types
-              pooled: hours across, weekdays down, last three weeks. Each
-              cell shows the accumulated noise load — brighter means more
-              load. Night columns (22–06) are tinted light violet, day
-              columns light green.</td>
-              <td>"What does a typical week look like?"</td></tr>
+          <tr><td><b>Noise level (7d)</b></td><td>One grid, all noise types
+              pooled: one row per day (last 7 days), hours across. Each cell
+              shows that hour's noise level (episode loudness above the noise
+              floor) — raw, no averaging — brighter means more load. Night
+              columns (22–06) are tinted light violet, day columns light
+              green.</td>
+              <td>"Which days and hours were the noisiest this week?"</td></tr>
           <tr><td><b>Hourly episodes (3w)</b></td><td>One grid, all noise types
               pooled: one row per day, hours across. Each cell stacks the
               episodes of that hour, banded by their <b>peak level</b> —
@@ -195,7 +196,7 @@
               cells tinted by loudness range; night rows (22:00–06:59) have
               a violet time cell.</td>
               <td>"Which vehicles were the loudest recently?"</td></tr>
-          <tr><td><b>3D View</b></td><td>A floating dot cloud over
+          <tr><td><b>3D &gt;57 dB (7d)</b></td><td>A floating dot cloud over
               hour of day, weekday, and loudness (last 7 days). Dot size =
               number of episodes; color = loudness range (green audible,
               yellow loud, red very loud; quiet night dots violet). The
@@ -257,6 +258,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=253"></script>
+<script src="/app.js?v=261"></script>
 </body>
 </html>

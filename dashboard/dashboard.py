@@ -642,14 +642,15 @@ def compute_weekday_cache():
         }
         for key in grids_by_t
     }
-    # noise load per group: episodes x loudness above -60 dBFS noise floor accumulated over 3 weeks
+    # noise level per group: episodes x loudness above -60 dBFS noise floor
+    # for the last 7x24h (last 7 days), no averaging; keyed by weekday 0=Sun
     load_rows = q(
         """
         SELECT CAST(strftime('%w', ts, 'unixepoch', 'localtime') AS INTEGER),
                CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
                event, ROUND(SUM(MAX(COALESCE(spl_peak, spl, -60) + 60, 0)), 1)
         FROM events
-        WHERE ts >= strftime('%s', 'now') - 21 * 86400
+        WHERE ts >= strftime('%s', 'now', 'localtime', 'start of day', '-6 days', 'utc')
         GROUP BY 1, 2, 3
         """
     )
@@ -662,7 +663,8 @@ def compute_weekday_cache():
         k = (wd, h)
         ld[k] = ld.get(k, 0) + v
     load_payload = {
-        g: [[wd, h, round(v, 1)] for (wd, h), v in sorted(l.items())]
+        g: [[wd, h, round(v, 1)]
+            for (wd, h), v in sorted(l.items())]
         for g, l in load.items()
     }
     return {"groups": order, "thresholds": thresholds, "load": load_payload}
