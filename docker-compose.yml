@@ -43,6 +43,7 @@ services:
     volumes:
       - ./logs:/data/logs
       - ./dashboard/static:/app/static:ro  # live UI edits, no rebuild needed
+      - ./dashboard/dashboard.py:/app/dashboard.py:ro
       - ./dashboard/version.txt:/app/version.txt:ro
       - ./.rclone:/backup-state:ro         # last-backup marker written by sync
     ports:

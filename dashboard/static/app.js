@@ -203,8 +203,8 @@ async function loadLoudList() {
         const timeBg = night ? "#f3e8ff" : "#e3f7e8";
         return `<tr${night ? ' class="night"' : ""}>` +
                `<td style="background:${dbBg}">${(r[3] + DB_OFFSET).toFixed(1)}</td>` +
-               `<td>${WDAYS[dt.getDay()]}</td>` +
                `<td style="background:${timeBg}">${timeStr}</td>` +
+               `<td>${WDAYS[dt.getDay()]}</td>` +
                `<td>${fmtDate(r[0] * 1000)}</td></tr>`;
       }).join("")
     : "<tr><td colspan='4'>none yet — no vehicle episodes recorded</td></tr>";
@@ -539,23 +539,8 @@ async function loadLoudVehicles() {
   drawDayHeatmap("loudveh-chart", rows, null, true);
 }
 
-function lastSevenDayDates() {
-  // map weekday 0=Sun..6=Sat -> date string of that weekday in the last 7
-  // calendar days (today + the previous 6), matching the backend window;
-  // each weekday occurs exactly once, so the mapping is unambiguous
-  const now = new Date();
-  const p2 = n => String(n).padStart(2, "0");
-  const m = new Map();
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-    const ds = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
-    if (!m.has(d.getDay())) m.set(d.getDay(), ds);
-  }
-  return m;
-}
-
 function drawDayLoad(id, rows, maxLoad) {
-  // rows: [date, hour, v]; one row per day of the last 7 days, newest on top
+  // rows: [date, hour, v]; one row per day of the last 3 weeks, newest on top
   const hourList = hourCols();
   const hours = hourList.map(h => String(h).padStart(2, "0"));
   const hourIdx = new Map(hourList.map((h, i) => [h, i]));
@@ -596,41 +581,26 @@ function drawDayLoad(id, rows, maxLoad) {
   });
 }
 
+// one pooled grid: all noise types together, one row per day of the last 3 weeks
 async function loadHeatmapView() {
-  // cached payload (all thresholds + noise load), recomputed every 5 min
-  if (!state.weekdayPayload || Date.now() - state.weekdayFetchedAt > 300000) {
-    state.weekdayPayload = await get("/api/weekday");
-    state.weekdayFetchedAt = Date.now();
-  }
+  const to = Date.now() / 1000;
+  const p = { from: to - 21 * 86400, to };
+  await loadCounts();  // fills state.groupMembers
   stopWeekdayCycle();
   const cont = document.getElementById("heatmap-list");
   disposeChartsIn(cont);
   cont.innerHTML = "";
-  // pool the per-group noise-level grids into one (Background already
-  // excluded server-side); noise level is additive, so sums are valid.
-  // Backend rows are [weekday 0=Sun..6=Sat, hour, load] over the last 7
-  // calendar days; each weekday occurs once, so map weekday -> its date.
-  const dayDate = lastSevenDayDates();
-  const merged = new Map();
-  for (const cells of Object.values(state.weekdayPayload.load || {})) {
-    for (const [wd, h, v] of cells) {
-      const date = dayDate.get(wd);
-      if (!date) continue;
-      const k = `${date}|${h}`;
-      merged.set(k, (merged.get(k) || 0) + v);
-    }
-  }
-  const grid = [...merged].map(([k, v]) => {
-    const date = k.slice(0, 10);
-    const h = Number(k.slice(11));
-    return [date, h, Math.round(v * 10) / 10];
-  });
-  const maxLoad = Math.max(1, ...grid.map(x => x[2]));
+  // every non-Background class, ";"-joined for the API
+  const members = Object.entries(state.groupMembers)
+    .filter(([g]) => !EXCLUDED_GROUPS.has(g))
+    .flatMap(([, m]) => m).join(";");
   const div = document.createElement("div");
   div.id = "hm-all";
   div.className = "chart";
   cont.append(div);
-  drawDayLoad("hm-all", grid, maxLoad);
+  const heat = await get("/api/hourly", { ...p, event: members, by: "dayload" });
+  const maxLoad = Math.max(1, ...heat.rows.map(x => x[2]));
+  drawDayLoad("hm-all", heat.rows, maxLoad);
 }
 
 /* ---------------------------------------------------------- view switching */

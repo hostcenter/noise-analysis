@@ -403,6 +403,17 @@ def api_hourly(
         )
         return {"rows": [[r[0], r[1], r[2], r[3], r[4]] for r in rows]}
 
+    if by == "dayload":
+        rows = q(
+            """
+            SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'),
+                   CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
+                   ROUND(SUM(MAX(COALESCE(spl_peak, spl, -60) + 60, 0)), 1)
+            """ + sql + " GROUP BY 1, 2 ORDER BY 1",
+            params,
+        )
+        return {"rows": [[r[0], r[1], r[2]] for r in rows]}
+
     if by == "week":
         rows = q(
             "SELECT strftime('%H', ts, 'unixepoch', 'localtime'), ts " + sql +
@@ -643,14 +654,14 @@ def compute_weekday_cache():
         for key in grids_by_t
     }
     # noise level per group: episodes x loudness above -60 dBFS noise floor
-    # for the last 7x24h (last 7 days), no averaging; keyed by weekday 0=Sun
+    # for the last 21 days (last 3 weeks), no averaging; keyed by weekday 0=Sun
     load_rows = q(
         """
         SELECT CAST(strftime('%w', ts, 'unixepoch', 'localtime') AS INTEGER),
                CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
                event, ROUND(SUM(MAX(COALESCE(spl_peak, spl, -60) + 60, 0)), 1)
         FROM events
-        WHERE ts >= strftime('%s', 'now', 'localtime', 'start of day', '-6 days', 'utc')
+        WHERE ts >= strftime('%s', 'now') - 21 * 86400
         GROUP BY 1, 2, 3
         """
     )

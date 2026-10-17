@@ -47,7 +47,7 @@
   }
   #live { height: 1920px; }  /* 4 × 480 — tall vertical strip, newest stays at top */
   #heatmap-list h3 { margin: 16px 0 6px; font-size: 13px; color: #57606a; }
-  #heatmap-list .chart { height: 280px; }
+  #heatmap-list .chart { height: 640px; }
   /* single pooled grid: one row per day, double line height */
   #day3w-list .chart { height: 640px; }
   #loudveh-chart { height: 640px; }
@@ -84,7 +84,7 @@
 <aside>
   <h1>Nachtunruhe</h1>
   <nav id="nav">
-    <button class="nav-item active" data-view="heatmap">Noise level (7d)</button>
+    <button class="nav-item active" data-view="heatmap">Noise level (3w)</button>
     <button class="nav-item" data-view="day3w">Hourly episodes (3w)</button>
     <button class="nav-item" data-view="loudveh">Loud Vehicles (3w)</button>
     <button class="nav-item" data-view="loudest">Loudest vehicles (3w)</button>
@@ -101,8 +101,8 @@
 <div class="content">
   <main>
     <section id="view-heatmap">
-      <h2>Noise level (last 7 days)</h2>
-      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · episode loudness above the noise floor, summed per hour, one row per day · raw, no averaging · last 7 days · brighter = more load.</div>
+      <h2>Noise level (3w)</h2>
+      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · episode loudness above the noise floor, summed per hour, one row per day · raw, no averaging · last 3 weeks · brighter = more load.</div>
       <div id="heatmap-list"></div>
     </section>
 
@@ -123,7 +123,7 @@
       <div class="hint" style="margin-bottom:8px">All vehicle episodes (Motor group) above 67 dB peak in the last three weeks, loudest first · times as HH:mm (24 h) · rows at 22-06h highlighted red.</div>
       <table id="loud-table">
         <thead>
-          <tr><th>dB</th><th>Weekday</th><th>Time</th><th>Date</th></tr>
+          <tr><th>dB</th><th>Time</th><th>Weekday</th><th>Date</th></tr>
         </thead>
         <tbody id="loud-body"></tbody>
       </table>
@@ -170,13 +170,13 @@
         <h3>The views at a glance</h3>
         <table>
           <tr><th>View</th><th>What you see</th><th>Question it answers</th></tr>
-          <tr><td><b>Noise level (7d)</b></td><td>One grid, all noise types
-              pooled: one row per day (last 7 days), hours across. Each cell
+          <tr><td><b>Noise level (3w)</b></td><td>One grid, all noise types
+              pooled: one row per day (last 3 weeks), hours across. Each cell
               shows that hour's noise level (episode loudness above the noise
               floor) — raw, no averaging — brighter means more load. Night
               columns (22–06) are tinted light violet, day columns light
               green.</td>
-              <td>"Which days and hours were the noisiest this week?"</td></tr>
+              <td>"Which days and hours were the noisiest recently?"</td></tr>
           <tr><td><b>Hourly episodes (3w)</b></td><td>One grid, all noise types
               pooled: one row per day, hours across. Each cell stacks the
               episodes of that hour, banded by their <b>peak level</b> —
@@ -192,7 +192,7 @@
           <tr><td><b>Loudest vehicles (3w)</b></td><td>All vehicle
               episodes (Motor family) whose peak level reached 67&nbsp;dB in
               the last three weeks, loudest first — the view title shows how
-              many there are. Loudness, weekday, time, and date;
+              many there are. Loudness, time, weekday, and date;
               cells tinted by loudness range; night rows (22:00–06:59) have
               a violet time cell.</td>
               <td>"Which vehicles were the loudest recently?"</td></tr>
@@ -258,6 +258,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=261"></script>
+<script src="/app.js?v=263"></script>
 </body>
 </html>
