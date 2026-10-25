@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS spl (
   spl   REAL, spl_min REAL, spl_max REAL,
   low   REAL, mid REAL, high REAL
 );
+CREATE TABLE IF NOT EXISTS spl_hourly (
+  hour_ts REAL PRIMARY KEY,
+  avg_spl REAL,
+  min_spl REAL,
+  max_spl REAL,
+  count INTEGER
+);
 CREATE TABLE IF NOT EXISTS events (
   ts REAL, event TEXT, confidence REAL, spl REAL, duration REAL,
   spl_peak REAL,
@@ -62,6 +69,7 @@ def parse_ts(s):
 def connect():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA synchronous=NORMAL")
     con.execute("PRAGMA busy_timeout=5000")
     return con
 
@@ -191,8 +199,8 @@ def ingester(stop):
                 "INSERT OR IGNORE INTO events VALUES (?,?,?,?,?,?)",
                 event_row,
             )
-            if n1 or n2:
-                print(f"ingested {n1 or 0} spl, {n2 or 0} events", flush=True)
+            if n2:
+                print(f"ingested {n2} events", flush=True)
         except Exception as exc:
             print(f"ingest error: {exc!r}", flush=True)
         stop.wait(INGEST_INTERVAL)
@@ -261,13 +269,41 @@ def columnar(rows):
     }
 
 
+def weekday_coverage(from_ts_sql, to_ts_sql, params=()):
+    """Return {weekday 0=Sun: occurrences} in the range, probed fast via index."""
+    return dict(
+        q(
+            f"""
+            WITH RECURSIVE days(start_ts, end_ts) AS (
+                SELECT CAST(strftime('%s', {to_ts_sql}, 'unixepoch', 'localtime', 'start of day', 'utc') AS INTEGER),
+                       CAST(strftime('%s', {to_ts_sql}, 'unixepoch', 'localtime', 'start of day', 'utc') + 86400 AS INTEGER)
+                UNION ALL
+                SELECT start_ts - 86400,
+                       start_ts
+                FROM days
+                WHERE start_ts > {from_ts_sql}
+            )
+            SELECT CAST(strftime('%w', start_ts, 'unixepoch', 'localtime') AS INTEGER) as wd,
+                   COUNT(*)
+            FROM days
+            WHERE EXISTS (
+                SELECT 1 FROM spl
+                WHERE ts >= days.start_ts AND ts < days.end_ts
+            )
+            GROUP BY 1
+            """,
+            params,
+        )
+    )
+
+
 @app.get("/api/range")
 def api_range():
-    spl = q("SELECT MIN(ts), MAX(ts), COUNT(*) FROM spl")[0]
-    ev = q("SELECT MIN(ts), MAX(ts), COUNT(*) FROM events")[0]
+    spl = q("SELECT (SELECT MIN(ts) FROM spl), (SELECT MAX(ts) FROM spl)")[0]
+    ev = q("SELECT (SELECT MIN(ts) FROM events), (SELECT MAX(ts) FROM events)")[0]
     return {
-        "spl": {"min": spl[0], "max": spl[1], "count": spl[2]},
-        "events": {"min": ev[0], "max": ev[1], "count": ev[2]},
+        "spl": {"min": spl[0], "max": spl[1], "count": None},
+        "events": {"min": ev[0], "max": ev[1], "count": None},
         "now": time.time(),
     }
 
@@ -437,15 +473,7 @@ def api_hourly(
     )
     # divide by how often each weekday occurred in the range (coverage from
     # the continuous SPL log), so partially-recorded weekdays don't over-weight
-    days = q(
-        """
-        SELECT CAST(strftime('%w', ts, 'unixepoch', 'localtime') AS INTEGER),
-               COUNT(DISTINCT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'))
-        FROM spl WHERE ts BETWEEN :f AND :t GROUP BY 1
-        """,
-        params,
-    )
-    coverage = {wd: n for wd, n in days}
+    coverage = weekday_coverage(":f", ":t", params)
     return {
         "cells": [
             [wd, h, round(n / coverage.get(wd, 1), 1)] for wd, h, n in rows
@@ -619,16 +647,7 @@ def compute_weekday_cache():
         GROUP BY 1, 2, 3
         """
     )
-    days = q(
-        """
-        SELECT CAST(strftime('%w', ts, 'unixepoch', 'localtime') AS INTEGER),
-               COUNT(DISTINCT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'))
-        FROM spl
-        WHERE ts >= strftime('%s', 'now') - 28 * 86400
-        GROUP BY 1
-        """
-    )
-    coverage = {wd: n for wd, n in days}
+    coverage = weekday_coverage("strftime('%s', 'now') - 28 * 86400", "strftime('%s', 'now')")
     grids_by_t = {"all": {}, **{str(t): {} for t in WEEKDAY_THRESHOLDS}}
     totals = {"all": {}, **{str(t): {} for t in WEEKDAY_THRESHOLDS}}
     for row in rows:

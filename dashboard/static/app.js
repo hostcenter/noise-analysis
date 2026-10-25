@@ -536,7 +536,7 @@ async function loadLoudVehicles() {
     { ...p, event: members, by: "daybands" });
   // by="daybands" rows: [date, hour, audible, loud, veryLoud]
   const rows = heat.rows.map(([ds, h, , loud, very]) => [ds, h, 0, loud, very]);
-  drawDayHeatmap("loudveh-chart", rows, null, true);
+  drawDayHeatmap("loudveh-chart", rows, null, false);
 }
 
 function drawDayLoad(id, rows, maxLoad) {
