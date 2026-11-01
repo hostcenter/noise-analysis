@@ -74,6 +74,12 @@ function allParams() {
   return { from: state.dataMin ?? to - 86400, to };
 }
 
+const FROM_DATE = "2026-10-04";
+function sinceOct4Params() {
+  const from = new Date(2026, 9, 4).getTime() / 1000;  // 04.10.2026 00:00 local
+  return { from, to: Date.now() / 1000 };
+}
+
 const TIME_OPTS = { hour12: false };
 const fmtTime = t => new Date(t).toLocaleTimeString([], TIME_OPTS);
 const fmtDate = t => {
@@ -181,165 +187,343 @@ async function loadThreed() {
 
 const WDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-async function loadLoudList() {
-  const to = Date.now() / 1000;
-  await loadCounts();  // fills state.groupMembers
-  const members = (state.groupMembers.Motor || []).join(";");
-  // every vehicle episode of the last 3 weeks whose peak reached 67 dB SPL
-  const d = await get("/api/loudest", {
-    from: to - 21 * 86400, to, event: members,
-    min_db: (67 - DB_OFFSET).toFixed(1), limit: 20000,
-  });
-  document.querySelector("#view-loudest h2").textContent =
-    `${d.rows.length} Loudest vehicles (3w)`;
-  document.getElementById("loud-body").innerHTML = d.rows.length
-    ? d.rows.map(r => {
-        const dt = new Date(r[0] * 1000);
-        const h24 = dt.getHours();
-        const night = h24 >= 22 || h24 <= 6;  // 22:00–06:59
-        const p = n => String(n).padStart(2, "0");
-        const timeStr = `${p(h24)}:${p(dt.getMinutes())}`;
-        const dbBg = r[3] >= -40 ? "#ffebe9" : r[3] >= -45 ? "#fff3bf" : "#e7f0fe";
-        const timeBg = night ? "#f3e8ff" : "#e3f7e8";
-        return `<tr${night ? ' class="night"' : ""}>` +
-               `<td style="background:${dbBg}">${(r[3] + DB_OFFSET).toFixed(1)}</td>` +
-               `<td style="background:${timeBg}">${timeStr}</td>` +
-               `<td>${WDAYS[dt.getDay()]}</td>` +
-               `<td>${fmtDate(r[0] * 1000)}</td></tr>`;
-      }).join("")
-    : "<tr><td colspan='4'>none yet — no vehicle episodes recorded</td></tr>";
+const dist3dState = {
+  data: [],
+  days: [],
+  labels: [],
+  counts: new Map(),
+  centerZ: null,
+  minCenterZ: -250,
+  maxCenterZ: 250,
+  keyBound: false,
+};
+
+function getGrid3DView(chart) {
+  try {
+    const model = chart.getModel().getComponent("grid3D");
+    return chart._componentsViews.find(v => v.type === "grid3D" || v._model === model);
+  } catch (e) {
+    return null;
+  }
 }
 
-const dist3dState = { data: [], info: new Map() };
+function getGrid3DControl(chart) {
+  const view = getGrid3DView(chart);
+  return view && view._control;
+}
 
-// logarithmic loudness axis for 3D: plot log(dB - 57 + 1) so 57→0, 82→log26
-const DB_MIN_3D = 57;
-const DB_MAX_3D = 82;
-const toLog3D = db => Math.log(Math.max(db - DB_MIN_3D + 1, 1));
-const fromLog3D = val => Math.exp(val) - 1 + DB_MIN_3D;
-const Z_TICKS_3D = [57, 62, 67, 72, 77, 82].map(toLog3D);
+function patchOppositeAxes(chart) {
+  const view = getGrid3DView(chart);
+  if (!view || view._oppositePatched || !view._axes || view._axes.length < 3) return;
+  view._oppositePatched = true;
+
+  const origUpdatePos = view._updateAxisLinePosition;
+  view._updateAxisLinePosition = function() {
+    origUpdatePos.call(this);
+    const coordSys = this._model.coordinateSystem;
+    const xAx = coordSys.getAxis("x");
+    const yAx = coordSys.getAxis("y");
+    const zAx = coordSys.getAxis("z");
+    const zMax = zAx.getExtentMax(), zMin = zAx.getExtentMin();
+    const xMin = xAx.getExtentMin(), xMax = xAx.getExtentMax();
+    const yMax = yAx.getExtentMax(), yMin = yAx.getExtentMin();
+    const f = this._faces;
+
+    // Default ECharts-GL places both Y (Day) and Z (Noise level) on the same X side:
+    //   g (for Y) = f[0].invisible ? xMin : xMax
+    //   v (for Z) = f[0].invisible ? xMax : xMin
+    // When looking straight down the airstrip (beta=0), f[0] and f[1] have equal Z,
+    // so both Y and Z end up on the right side (+60).
+    // Move the Y (Day) axis to the opposite X side from Z (Noise level),
+    // and ensure ticks/labels point outward on that side:
+    const c = this._axes[1].rootNode;  // Y (Day) axis
+    const d = this._axes[2].rootNode;  // Z (Noise level) axis
+    const zPosX = d.position.x;        // Where Z axis is placed (e.g. +60 right)
+    const yPosX = zPosX >= 0 ? xMin : xMax; // Opposite side for Day axis (e.g. -60 left)
+    const _ = f[2].rootNode.invisible ? zMax : zMin;
+
+    c.rotation.identity();
+    if (yPosX < 0) {
+      this._axes[1].flipped = true;
+      c.rotation.rotateZ(Math.PI);
+    } else {
+      this._axes[1].flipped = false;
+    }
+    c.position.set(yPosX, _, 0);
+    c.update();
+
+    this._updateAxisLabelAlign();
+  };
+
+  view._updateAxisLinePosition();
+}
+
+function flyAirstrip(deltaZ) {
+  const chart = charts["dist3d"];
+  if (!chart || dist3dState.centerZ === null) return;
+  const ctrl = getGrid3DControl(chart);
+  const curCenter = ctrl ? ctrl.getCenter() : [0, -10, dist3dState.centerZ];
+  const nextZ = Math.max(dist3dState.minCenterZ, Math.min(dist3dState.maxCenterZ, curCenter[2] + deltaZ));
+  dist3dState.centerZ = nextZ;
+  const newCenter = [curCenter[0], curCenter[1], nextZ];
+  if (ctrl) {
+    ctrl.setCenter(newCenter);
+    ctrl.update();
+  } else {
+    chart.setOption({ grid3D: { viewControl: { center: newCenter } } });
+  }
+}
+
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return 0.5 * (
+    (2 * p1) +
+    (-p0 + p2) * t +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+  );
+}
+
+function bicubicEval(grid, x, y, rows, cols, maxCap) {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const tx = x - xi;
+  const ty = y - yi;
+
+  const getZ = (r, c) => {
+    const rr = Math.max(0, Math.min(rows - 1, r));
+    const cc = Math.max(0, Math.min(cols - 1, c));
+    return grid[rr][cc];
+  };
+
+  const colVals = [];
+  for (let m = -1; m <= 2; m++) {
+    const p0 = getZ(yi + m, xi - 1);
+    const p1 = getZ(yi + m, xi);
+    const p2 = getZ(yi + m, xi + 1);
+    const p3 = getZ(yi + m, xi + 2);
+    colVals.push(catmullRom(p0, p1, p2, p3, tx));
+  }
+  const val = catmullRom(colVals[0], colVals[1], colVals[2], colVals[3], ty);
+  return Math.max(0, Math.min(maxCap, +val.toFixed(1)));
+}
 
 async function loadDist3D() {
-  const to = Date.now() / 1000;
-  const d = await get("/api/weekcounts",
-    { from: to - 7 * 86400, to, hourly: 1, min_db: state.loudDb });
+  const p = sinceOct4Params();
+  await loadCounts();
+  const members = Object.entries(state.groupMembers)
+    .filter(([g]) => !EXCLUDED_GROUPS.has(g))
+    .flatMap(([, m]) => m).join(";");
+  const res = await get("/api/hourly", { ...p, event: members, by: "dayload" });
 
-  // aggregate [weekday, hour, class, count, avgSpl, maxSpl, duration] → cloud
-  const groups = new Map();
-  const cells = new Map();   // "group|wd|hour" -> {n, splSum, max, dur}
-  for (const [wd, h, cls, n, avg, max, dur, loud] of d.rows) {
-    const g = groupOf(cls);
-    if (EXCLUDED_GROUPS.has(g)) continue;
-    if (avg != null && (avg + DB_OFFSET) < DB_MIN_3D) continue;
-    groups.set(g, (groups.get(g) || 0) + n);
-    const key = `${g}|${wd}|${h}`;
-    const cur = cells.get(key) || { n: 0, splSum: 0, max: -999, dur: 0 };
-    cur.n += n;
-    cur.splSum += (avg || 0) * n;      // weighted average across classes
-    cur.max = Math.max(cur.max, max || -999);
-    cur.dur += dur || 0;
-    cells.set(key, cur);
+  const filtered = res.rows.filter(r => r[0] >= FROM_DATE);
+  // In ECharts-GL, y=0 is mapped to +boxDepth/2 (front, closest to camera at +Z)
+  // and y=days.length-1 is mapped to -boxDepth/2 (back, away from camera at -Z).
+  // Put earliest date (Oct 4th) at y=0 (very front) and newest date at y=days.length-1 (back).
+  const days = [...new Set(filtered.map(r => r[0]))].sort();
+  const labels = days.map(formatDaySelector);
+  const lookup = new Map();
+  let maxLoad = 1;
+  for (const [ds, h, loadVal] of filtered) {
+    if (loadVal != null) {
+      lookup.set(`${ds}-${h}`, +loadVal);
+      if (loadVal > maxLoad) maxLoad = +loadVal;
+    }
   }
-  // each weekday occurs exactly once in a 7-day window → its date is unique
-  const dayDate = new Map();
-  for (let i = 0; i < 7; i++) {
-    const dte = new Date((to - i * 86400) * 1000);
-    dayDate.set((dte.getDay() + 6) % 7, dte);
-  }
-  const names = [...groups.keys()].sort((a, b) => groups.get(b) - groups.get(a));
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const info = new Map();
-  const data = [];
-  const zHours = hourCols();
+  const zMax = Math.ceil(maxLoad * 1.05);
+
   const now = new Date();
-  const nowWd = (now.getDay() + 6) % 7, nowH = now.getHours();
-  for (const [key, entry] of cells) {
-    const [g, wd, h] = key.split("|");
-    const x = +h;                                         // always 00-24
-    const y = (Number(wd) + 6) % 7;
-    const z = entry.splSum / entry.n + DB_OFFSET;         // avg loudness (dB SPL)
-    if (z < DB_MIN_3D) continue;
-    // loudness color code; quiet dots are violet at night (22-07)
-    const color = z >= 67 ? "#cf222e"
-                : z >= 62 ? "#f59f00"
-                : (h >= 22 || h <= 6) ? "#8b5cf6" : "#1a7f37";
-    const isNow = Number(wd) === nowWd && Number(h) === nowH;
-    const zLog = toLog3D(z);
-    data.push({
-      value: [x, y, zLog, entry.n],
-      symbolSize: 2 + Math.sqrt(entry.n) * 2.5,
-      isNow, baseSize: 2 + Math.sqrt(entry.n) * 2.5,
-      itemStyle: { color, opacity: 0.85 },
-      meta: [g, wd, h, entry.max, entry.dur, entry.n, z],
-    });
-    info.set(`${x}|${y}|${zLog}`, [g, wd, h, entry.max, entry.dur, entry.n, z]);
+  const p2 = n => String(n).padStart(2, "0");
+  const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+  const nowH = now.getHours();
+
+  const numDays = days.length;
+  // Build raw 2D grid [yi][x] for bicubic spline interpolation
+  const rawGrid = [];
+  for (let yi = 0; yi < numDays; yi++) {
+    const ds = days[yi];
+    const row = [];
+    let lastValid = 0;
+    for (let x = 0; x < 24; x++) {
+      const val = lookup.get(`${ds}-${x}`);
+      if (val != null) {
+        lastValid = val;
+        row.push(val);
+      } else {
+        row.push(ds === today && x > nowH ? lastValid : 0);
+      }
+    }
+    rawGrid.push(row);
   }
+
+  // Subdivide 4x along X (hours) and 3x along Y (days) for smooth spline surface
+  const subX = 4;
+  const subY = 3;
+  const stepsX = (24 - 1) * subX + 1;
+  const stepsY = Math.max(1, (numDays - 1) * subY + 1);
+  const data = [];
+
+  for (let j = 0; j < stepsY; j++) {
+    const y = j / subY;
+    const nearYi = Math.round(y);
+    const ds = days[nearYi];
+    for (let i = 0; i < stepsX; i++) {
+      const x = i / subX;
+      if (ds === today && x > nowH + 0.25) {
+        data.push([+x.toFixed(2), +y.toFixed(2), null]);
+      } else {
+        const zSmooth = bicubicEval(rawGrid, x, y, numDays, 24, zMax);
+        data.push([+x.toFixed(2), +y.toFixed(2), zSmooth]);
+      }
+    }
+  }
+
+  const boxDepth = Math.max(240, numDays * 16);
   dist3dState.data = data;
-  dist3dState.info = info;
+  dist3dState.dataShape = [stepsY, stepsX];
   dist3dState.days = days;
-  dist3dState.hours = zHours.map(h => String(h).padStart(2, "0"));
-  dist3dState.dayDate = dayDate;
-  dist3dState.nowWd = nowWd;
-  dist3dState.nowH = nowH;
+  dist3dState.labels = labels;
+  dist3dState.lookup = lookup;
+  dist3dState.maxLoad = maxLoad;
+  dist3dState.zMax = zMax;
+  dist3dState.boxDepth = boxDepth;
+  // In ECharts-GL, y=0 (Oct 4th) is at +boxDepth/2 (very front, maxCenterZ)
+  // and y=max (newest date) is at -boxDepth/2 (back, minCenterZ).
+  dist3dState.minCenterZ = -boxDepth / 2 + 20;
+  dist3dState.maxCenterZ = boxDepth / 2 - 20;
+  if (dist3dState.centerZ === null) {
+    dist3dState.centerZ = dist3dState.maxCenterZ; // Start at the most arrow-down point (very front, Oct 4th)
+  } else {
+    dist3dState.centerZ = Math.max(dist3dState.minCenterZ, Math.min(dist3dState.maxCenterZ, dist3dState.centerZ));
+  }
+
+  if (!dist3dState.keyBound) {
+    dist3dState.keyBound = true;
+    window.addEventListener("keydown", e => {
+      if (activeView !== "threed") return;
+      if (e.target && (e.target.tagName === "SELECT" || e.target.tagName === "INPUT")) return;
+      const step = 20;
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        flyAirstrip(-step);  // Up arrow (inverted)
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        flyAirstrip(step);   // Down arrow (inverted)
+      }
+    });
+  }
+
   applyDist3D();
 }
 
 function applyDist3D() {
-  const { data, info, days, hours, dayDate } = dist3dState;
-  const styled = data.map(dot => dot.isNow
-    ? { ...dot, symbolSize: dot.baseSize * 1.8,
-        itemStyle: { color: dot.itemStyle.color, opacity: 1 } }
-    : dot);
-  // black path through the dots of the current weekday at the current hour
-  const nowLine = data
-    .filter(dot => dot.value[0] === dist3dState.nowH &&
-                   dot.value[1] === dist3dState.nowWd)
-    .sort((a, b) => a.value[2] - b.value[2])
-    .map(dot => dot.value.slice(0, 3));
-  mkChart("dist3d").setOption({
+  const { data, dataShape, days, labels, lookup, maxLoad, zMax, boxDepth, centerZ } = dist3dState;
+  const chart = mkChart("dist3d");
+  chart.setOption({
     animation: false,
     tooltip: {
       formatter: p => {
-        const meta = (p.data && p.data.meta) ||
-                     info.get(`${p.value[0]}|${p.value[1]}|${p.value[2]}`) ||
-                     ["?", 0, 0, 0, 0, 0];
-        const [g, wd, h, peak, dur, total] = meta;
-        const dte = dayDate.get((Number(wd) + 6) % 7);
-        const ds = fmtDate(dte.getTime());
-        const hh = String(h).padStart(2, "0");
-        return `${ds} ${hh}:00 · ${g}<br>` +
-               `peak ${(peak + DB_OFFSET).toFixed(1)} dB · ${Math.round(dur)} s total`;
+        if (!p.value || p.value[2] == null) return "";
+        const x = Math.min(23, Math.max(0, Math.round(p.value[0])));
+        const yi = Math.min(days.length - 1, Math.max(0, Math.round(p.value[1])));
+        const ds = days[yi] || "";
+        const label = labels[yi] || ds;
+        const hh = String(x).padStart(2, "0");
+        const exactVal = lookup.get(`${ds}-${x}`);
+        const val = (exactVal != null ? exactVal : Number(p.value[2])).toFixed(1);
+        return `<b>${label}</b>, ${hh}:00\u2013${hh}:59<br>` +
+               `noise level <b>${val}</b>`;
       },
     },
-    xAxis3D: { type: "value", min: 0, max: 24, interval: 4, name: "hour",
-               axisLabel: { formatter: v => String(Math.round(v)).padStart(2, "0") + "h",
-                            textStyle: { color: "#57606a", fontSize: 10 } } },
-    yAxis3D: { type: "category", data: days, name: "weekday",
-               axisLabel: { textStyle: { color: "#57606a", fontSize: 10 } } },
-    zAxis3D: { type: "value",
-               min: 0,
-               max: toLog3D(DB_MAX_3D),
-               name: "dB",
-               axisTick: { customValues: Z_TICKS_3D },
-               splitLine: { customValues: Z_TICKS_3D, lineStyle: { color: "#eaeef2" } },
-               axisLabel: { customValues: Z_TICKS_3D,
-                            formatter: v => Math.round(fromLog3D(v)),
-                            textStyle: { color: "#57606a", fontSize: 10 } } },
+    visualMap: {
+      show: true,
+      dimension: 2,
+      min: 0,
+      max: maxLoad,
+      calculable: true,
+      orient: "horizontal",
+      left: 16,
+      top: 10,
+      itemWidth: 14,
+      itemHeight: 160,
+      text: ["High", "Noise level: Low"],
+      inRange: {
+        color: ["#1a7f37", "#2f9e44", "#8ce99a", "#f59f00", "#e8590c", "#cf222e", "#82071e"],
+      },
+      textStyle: { color: "#57606a", fontSize: 11 },
+    },
+    xAxis3D: {
+      type: "value",
+      name: "Hour",
+      min: 0,
+      max: 23,
+      interval: 3,
+      axisLabel: {
+        formatter: v => String(Math.round(v)).padStart(2, "0") + ":00",
+        textStyle: { color: "#57606a", fontSize: 10 },
+      },
+    },
+    yAxis3D: {
+      type: "value",
+      name: "Day",
+      min: 0,
+      max: Math.max(1, days.length - 1),
+      interval: 2,
+      axisLabel: {
+        formatter: v => labels[Math.round(v)] || "",
+        textStyle: { color: "#57606a", fontSize: 10 },
+      },
+    },
+    zAxis3D: {
+      type: "value",
+      name: "Noise level",
+      min: 0,
+      max: zMax,
+      axisLabel: {
+        formatter: v => Math.round(v),
+        textStyle: { color: "#57606a", fontSize: 10 },
+      },
+    },
     grid3D: {
-      boxWidth: 140, boxDepth: 90, boxHeight: 180,
-      viewControl: { distance: 280, alpha: 20, beta: 40 },
+      boxWidth: 120,
+      boxDepth: boxDepth,
+      boxHeight: 75,
       axisLine: { lineStyle: { color: "#d0d7de" } },
       axisLabel: { textStyle: { color: "#57606a" } },
       splitLine: { lineStyle: { color: "#eaeef2" } },
-      light: { main: { intensity: 1.2 }, ambient: { intensity: 0.4 } },
+      light: {
+        main: { intensity: 1.15, shadow: false, alpha: 35, beta: 30 },
+        ambient: { intensity: 0.45 },
+      },
+      viewControl: {
+        projection: "perspective",
+        alpha: 22,
+        beta: 0,
+        distance: 155,
+        minDistance: 40,
+        maxDistance: 500,
+        center: [0, -10, centerZ],
+        panMouseButton: "right",
+        rotateMouseButton: "left",
+        damping: 0.85,
+      },
     },
     series: [
-      { type: "scatter3D", data: styled,
-        emphasis: { itemStyle: { opacity: 1 } } },
-      { type: "line3D", data: nowLine, silent: true,
-        lineStyle: { color: "#24292f", width: 2, opacity: 0.9 } },
+      {
+        type: "surface",
+        data: data,
+        dataShape: dataShape,
+        shading: "lambert",
+        wireframe: {
+          show: true,
+          lineStyle: { color: "rgba(0,0,0,0.12)", width: 0.8 },
+        },
+        itemStyle: { opacity: 0.96 },
+      },
     ],
   }, { notMerge: true });
+  patchOppositeAxes(chart);
 }
 
 function hexToRgb(hex) {
@@ -475,7 +659,7 @@ function drawDayHeatmap(id, rows, maxNOverride = null, showText = false) {
   const p2 = n => String(n).padStart(2, "0");
   const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
   const nowH = now.getHours();
-  const days = [...new Set(rows.map(r => r[0]))].sort();
+  const days = [...new Set(rows.map(r => r[0]).filter(ds => ds >= FROM_DATE))].sort();
   const lookup = new Map(rows.map(([ds, h, b, y, r]) => [`${ds}-${h}`, [b, y, r]]));
   const data = [];
   days.forEach((ds, yi) => {
@@ -491,7 +675,10 @@ function drawDayHeatmap(id, rows, maxNOverride = null, showText = false) {
   });
   const maxN = maxNOverride ?? Math.max(...data.map(d2 => d2[2]), 1);
   const labels = dayLabels(days);
-  mkChart(id).setOption({
+  const el = document.getElementById(id);
+  el.style.height = `${Math.max(640, days.length * 28 + 42)}px`;
+  const chart = mkChart(id);
+  chart.setOption({
     animation: false,
     grid: { left: 86, right: 16, top: 26, bottom: 16 },
     tooltip: {
@@ -499,52 +686,311 @@ function drawDayHeatmap(id, rows, maxNOverride = null, showText = false) {
                       `<b>${p.value[2]}</b> events`,
     },
     xAxis: { type: "category", data: hours, position: "top" },
-    yAxis: { type: "category", data: labels, axisLabel: { color: "#57606a" } },
+    yAxis: { type: "category", data: labels, axisLabel: { color: "#57606a", interval: 0 } },
     series: [{ type: "custom", encode: { x: 0, y: 1 }, data,
                renderItem: fillCellsRender(maxN, showText, "hours-violet", hourList) }],
   });
+  chart.resize();
 }
 
-// one pooled grid: all noise types together, one row per day of the last 3 weeks
-async function loadDay3w() {
-  const to = Date.now() / 1000;
-  const p = { from: to - 21 * 86400, to };
-  await loadCounts();  // fills state.groupMembers
-  const cont = document.getElementById("day3w-list");
-  disposeChartsIn(cont);
-  cont.innerHTML = "";
-  // every non-Background class, ";"-joined for the API
-  const members = Object.entries(state.groupMembers)
+function formatDaySelector(ds) {
+  const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const [y, m, dd] = ds.split("-");
+  const wd = WD[new Date(+y, +m - 1, +dd).getDay()];
+  const day = String(dd).padStart(2, "0");
+  const mon = String(m).padStart(2, "0");
+  const yr = String(y).slice(-2);
+  return `${wd} ${day}.${mon}.${yr}`;
+}
+
+let day3wHeatRows = [];
+let day3wWheelAt = 0;
+let day3wGlobalMax = null;
+const day3wCache = {};
+
+function getFilterMembers(filterName) {
+  if (filterName === "Vehicles") {
+    return (state.groupMembers.Motor || []).join(";");
+  }
+  if (filterName === "Speech") {
+    const all = Object.values(state.groupMembers).flat();
+    const speech = all.filter(c => /speech|conversation|voice|whisper|shout|yell|scream|chatter|talk/i.test(c));
+    return (speech.length ? speech : ["Speech"]).join(";");
+  }
+  // "All" (non-background)
+  return Object.entries(state.groupMembers)
     .filter(([g]) => !EXCLUDED_GROUPS.has(g))
     .flatMap(([, m]) => m).join(";");
-  const div = document.createElement("div");
-  div.id = "d3w-all";
-  div.className = "chart";
-  cont.append(div);
-  const heat = await get("/api/hourly", { ...p, event: members, by: "daybands" });
-  drawDayHeatmap("d3w-all", heat.rows);
 }
 
-// single Motor-group grid, same daybands pipeline as the Daily view —
-// the audible band is zeroed so only loud (yellow) + very loud (red) show
-async function loadLoudVehicles() {
-  const to = Date.now() / 1000;
-  const p = { from: to - 21 * 86400, to };
+async function fetchDay3wRows(filterName) {
+  if (day3wCache[filterName]) return day3wCache[filterName];
+  const p = sinceOct4Params();
+  const members = getFilterMembers(filterName);
+  const heat = await get("/api/hourly", { ...p, event: members, by: "daybands" });
+  day3wCache[filterName] = heat.rows;
+  return heat.rows;
+}
+
+function updateDaySelectorUI() {
+  const sel = document.getElementById("day3w-select");
+  const prevBtn = document.getElementById("day3w-prev");
+  const nextBtn = document.getElementById("day3w-next");
+  if (!sel) return;
+  if (prevBtn) prevBtn.disabled = sel.selectedIndex >= sel.options.length - 1;
+  if (nextBtn) nextBtn.disabled = sel.selectedIndex <= 0;
+}
+
+function stepDay(delta) {
+  const sel = document.getElementById("day3w-select");
+  if (!sel || !sel.options.length) return;
+  const newIdx = sel.selectedIndex + delta;
+  if (newIdx >= 0 && newIdx < sel.options.length) {
+    sel.selectedIndex = newIdx;
+    state.selectedDay3w = sel.value;
+    updateDaySelectorUI();
+    renderDaySpline(state.selectedDay3w);
+  }
+}
+
+// spline chart for a single selected day, 3 loudness bands
+function renderDaySpline(ds) {
+  if (!ds) return;
+
+  const hourList = hourCols();
+  const hours = hourList.map(h => String(h).padStart(2, "0"));
+  const now = new Date();
+  const p2 = n => String(n).padStart(2, "0");
+  const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+  const nowH = now.getHours();
+  const filtered = day3wHeatRows.filter(r => r[0] >= FROM_DATE);
+  const lookup = new Map(filtered.map(([d, h, b, y, r]) => [`${d}-${h}`, [b, y, r]]));
+  const label = formatDaySelector(ds);
+  const filter = state.selectedFilter3w || "All";
+  const filterSuffix = filter !== "All" ? ` \u00B7 ${filter}` : "";
+
+  const audible = [], loud = [], veryLoud = [];
+  for (const h of hourList) {
+    if (ds === today && h > nowH) {
+      audible.push(null);
+      loud.push(null);
+      veryLoud.push(null);
+    } else {
+      const [b, y, r] = lookup.get(`${ds}-${h}`) ?? [0, 0, 0];
+      audible.push(b);
+      loud.push(y);
+      veryLoud.push(r);
+    }
+  }
+
+  // Fixed on the global maximum of this view across all dates and categories
+  const maxY = day3wGlobalMax || 230;
+
+  const chart = mkChart("day3w-chart");
+  chart.setOption({
+    animation: false,
+    grid: { left: 48, right: 16, top: 18, bottom: 24 },
+    tooltip: {
+      trigger: "axis",
+      formatter: params => {
+        const p0 = params[0];
+        if (!p0) return "";
+        const hr = p0.axisValue;
+        let sum = 0;
+        const lines = params
+          .filter(p => p.value != null)
+          .map(p => {
+            sum += p.value;
+            return `${p.marker}${p.seriesName}: <b>${p.value}</b>`;
+          });
+        if (!lines.length) return `${label}${filterSuffix}, ${hr}:00\u2013${hr}:59`;
+        return `${label}${filterSuffix}, ${hr}:00\u2013${hr}:59 (<b>${sum}</b> total)<br>` + lines.join("<br>");
+      },
+    },
+    xAxis: {
+      type: "category",
+      boundaryGap: false,
+      data: hours,
+      axisLabel: { color: "#57606a", fontSize: 11 },
+    },
+    yAxis: {
+      type: "value",
+      min: 0,
+      max: maxY,
+      axisLabel: { color: "#57606a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "#eaeef2" } },
+    },
+    series: [
+      {
+        name: "Audible (<62 dB)",
+        type: "line",
+        stack: "bands",
+        smooth: true,
+        showSymbol: false,
+        data: audible,
+        itemStyle: { color: "#1a7f37" },
+        lineStyle: { width: 2, color: "#1a7f37" },
+        areaStyle: { color: "rgba(26,127,55,0.28)" },
+        markArea: {
+          silent: true,
+          itemStyle: { color: "rgba(139,92,246,0.07)" },
+          data: [
+            [{ xAxis: "00" }, { xAxis: "07" }],
+            [{ xAxis: "22" }, { xAxis: "23" }],
+          ],
+        },
+      },
+      {
+        name: "Loud (62\u201367 dB)",
+        type: "line",
+        stack: "bands",
+        smooth: true,
+        showSymbol: false,
+        data: loud,
+        itemStyle: { color: "#f59f00" },
+        lineStyle: { width: 2, color: "#f59f00" },
+        areaStyle: { color: "rgba(245,159,0,0.32)" },
+      },
+      {
+        name: "Very loud (\u226567 dB)",
+        type: "line",
+        stack: "bands",
+        smooth: true,
+        showSymbol: false,
+        data: veryLoud,
+        itemStyle: { color: "#cf222e" },
+        lineStyle: { width: 2, color: "#cf222e" },
+        areaStyle: { color: "rgba(207,34,46,0.35)" },
+      },
+    ],
+  }, true);
+  chart.resize();
+}
+
+async function loadDay3w() {
   await loadCounts();  // fills state.groupMembers
-  const members = (state.groupMembers.Motor || []).join(";");
-  const heat = await get("/api/hourly",
-    { ...p, event: members, by: "daybands" });
-  // by="daybands" rows: [date, hour, audible, loud, veryLoud]
-  const rows = heat.rows.map(([ds, h, , loud, very]) => [ds, h, 0, loud, very]);
-  drawDayHeatmap("loudveh-chart", rows, null, false);
+  state.selectedFilter3w = state.selectedFilter3w || "All";
+
+  // Preload "All" so the view's global maximum is always known and fixed
+  const allRows = await fetchDay3wRows("All");
+  day3wGlobalMax = Math.max(5, ...allRows.filter(r => r[0] >= FROM_DATE).map(([, , b, y, r]) => b + y + r));
+
+  const filterSel = document.getElementById("day3w-filter");
+  if (filterSel) {
+    filterSel.value = state.selectedFilter3w;
+    const onFilterChange = async () => {
+      state.selectedFilter3w = filterSel.value;
+      day3wHeatRows = await fetchDay3wRows(state.selectedFilter3w);
+      renderDaySpline(state.selectedDay3w);
+    };
+    filterSel.onchange = onFilterChange;
+    filterSel.oninput = onFilterChange;
+  }
+
+  day3wHeatRows = await fetchDay3wRows(state.selectedFilter3w);
+
+  const filtered = day3wHeatRows.filter(r => r[0] >= FROM_DATE);
+  const days = [...new Set(filtered.map(r => r[0]))].sort().reverse();
+
+  const sel = document.getElementById("day3w-select");
+  const prevBtn = document.getElementById("day3w-prev");
+  const nextBtn = document.getElementById("day3w-next");
+  const chartEl = document.getElementById("day3w-chart");
+
+  if (sel) {
+    const current = sel.value || state.selectedDay3w || days[0];
+    sel.innerHTML = "";
+    days.forEach(ds => {
+      const opt = document.createElement("option");
+      opt.value = ds;
+      opt.textContent = formatDaySelector(ds);
+      sel.appendChild(opt);
+    });
+    if (days.includes(current)) {
+      sel.value = current;
+    } else if (days.length > 0) {
+      sel.value = days[0];
+    }
+    state.selectedDay3w = sel.value;
+
+    const onSelectChange = () => {
+      state.selectedDay3w = sel.value;
+      updateDaySelectorUI();
+      renderDaySpline(state.selectedDay3w);
+    };
+
+    sel.onchange = onSelectChange;
+    sel.oninput = onSelectChange;
+
+    sel.onkeydown = e => {
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+        e.preventDefault();
+        stepDay(1); // older day
+      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+        e.preventDefault();
+        stepDay(-1); // newer day
+      }
+    };
+
+    sel.onwheel = e => {
+      const now = Date.now();
+      if (now - day3wWheelAt < 160) return;
+      if (e.deltaX > 15 || e.deltaY > 15) {
+        day3wWheelAt = now;
+        e.preventDefault();
+        stepDay(1); // older day
+      } else if (e.deltaX < -15 || e.deltaY < -15) {
+        day3wWheelAt = now;
+        e.preventDefault();
+        stepDay(-1); // newer day
+      }
+    };
+  }
+
+  if (prevBtn) prevBtn.onclick = () => stepDay(1);
+  if (nextBtn) nextBtn.onclick = () => stepDay(-1);
+
+  if (chartEl && !chartEl.dataset.dragBound) {
+    chartEl.dataset.dragBound = "1";
+    let startX = null;
+    let startY = null;
+    chartEl.addEventListener("pointerdown", e => {
+      startX = e.clientX;
+      startY = e.clientY;
+    });
+    chartEl.addEventListener("pointerup", e => {
+      if (startX === null) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      startX = null;
+      startY = null;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+        if (dx > 0) stepDay(1);   // dragged right -> older day
+        else stepDay(-1);         // dragged left -> newer day
+      }
+    });
+    chartEl.addEventListener("wheel", e => {
+      if (Math.abs(e.deltaX) > 20 && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        const now = Date.now();
+        if (now - day3wWheelAt < 160) return;
+        day3wWheelAt = now;
+        e.preventDefault();
+        if (e.deltaX > 20) stepDay(-1);
+        else stepDay(1);
+      }
+    }, { passive: false });
+  }
+
+  updateDaySelectorUI();
+  renderDaySpline(state.selectedDay3w || days[0]);
 }
 
 function drawDayLoad(id, rows, maxLoad) {
-  // rows: [date, hour, v]; one row per day of the last 3 weeks, newest on top
+  // rows: [date, hour, v]; one row per day from Oct 4th onwards, newest on top
   const hourList = hourCols();
   const hours = hourList.map(h => String(h).padStart(2, "0"));
   const hourIdx = new Map(hourList.map((h, i) => [h, i]));
-  const days = [...new Set(rows.map(r => r[0]))].sort();
+  const days = [...new Set(rows.map(r => r[0]).filter(ds => ds >= FROM_DATE))].sort();
   const lookup = new Map(rows.map(([ds, h, v]) => [`${ds}-${h}`, v]));
   // cell of the actual day+hour → greyscale ramp instead of color
   const now = new Date();
@@ -568,7 +1014,10 @@ function drawDayLoad(id, rows, maxLoad) {
     }
   });
   const labels = dayLabels(days);
-  mkChart(id).setOption({
+  const el = document.getElementById(id);
+  el.style.height = `${Math.max(640, days.length * 28 + 42)}px`;
+  const chart = mkChart(id);
+  chart.setOption({
     animation: false,
     grid: { left: 86, right: 16, top: 26, bottom: 16 },
     tooltip: {
@@ -576,15 +1025,15 @@ function drawDayLoad(id, rows, maxLoad) {
                       `noise level <b>${p.value[2]}</b>`,
     },
     xAxis: { type: "category", data: hours, position: "top" },
-    yAxis: { type: "category", data: labels, axisLabel: { color: "#57606a" } },
+    yAxis: { type: "category", data: labels, axisLabel: { color: "#57606a", interval: 0 } },
     series: [{ type: "heatmap", data }],
   });
+  chart.resize();
 }
 
-// one pooled grid: all noise types together, one row per day of the last 3 weeks
+// one pooled grid: all noise types together, one row per day from Oct 4th onwards
 async function loadHeatmapView() {
-  const to = Date.now() / 1000;
-  const p = { from: to - 21 * 86400, to };
+  const p = sinceOct4Params();
   await loadCounts();  // fills state.groupMembers
   stopWeekdayCycle();
   const cont = document.getElementById("heatmap-list");
@@ -608,13 +1057,11 @@ async function loadHeatmapView() {
 const VIEW_LOADERS = {
   heatmap: loadHeatmapView,
   day3w: loadDay3w,
-  loudveh: loadLoudVehicles,
-  loudest: loadLoudList,
   threed: loadThreed,
   live: loadLive,
   readme: async () => {},  // static content, nothing to load
 };
-let activeView = "heatmap";
+let activeView = "threed";
 
 async function showView(name) {
   if (!VIEW_LOADERS[name]) return;
@@ -679,7 +1126,7 @@ async function boot() {
   });
   window.addEventListener("resize", () => Object.values(charts).forEach(c => c.resize()));
 
-  await showView("heatmap");
+  await showView("threed");
   // only the Last-5-min strip auto-refreshes; all other views load on entry
   setInterval(() => {
     if (activeView === "live") loadLive().catch(console.error);

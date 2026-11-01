@@ -17,12 +17,17 @@
   aside {
     background: #ffffff; border-bottom: 1px solid #d0d7de;
     padding: 8px 14px; position: sticky; top: 0; z-index: 10;
-    display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+    display: flex; flex-direction: column; gap: 6px;
   }
-  aside h1 { font-size: 15px; font-weight: 600; margin: 0 12px 0 4px; }
-  #nav { display: contents; }  /* buttons flow straight into the header row */
+  .header-top {
+    display: flex; align-items: center; width: 100%;
+  }
+  .header-top h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  #nav {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: 100%;
+  }
   #meta-footer {
-    margin-left: auto; padding-left: 12px; font-size: 11px; color: #57606a;
+    margin-left: auto; font-size: 11px; color: #57606a;
     display: flex; align-items: center; gap: 12px;
   }
   #meta-footer a { color: #57606a; text-decoration: none; }
@@ -49,8 +54,25 @@
   #heatmap-list h3 { margin: 16px 0 6px; font-size: 13px; color: #57606a; }
   #heatmap-list .chart { height: 640px; }
   /* single pooled grid: one row per day, double line height */
-  #day3w-list .chart { height: 640px; }
-  #loudveh-chart { height: 640px; }
+  #day3w-list h3 { margin: 14px 0 4px; font-size: 13px; color: #57606a; }
+  #day3w-list .chart { height: 45vh; min-height: 380px; }
+  .day-btn {
+    padding: 5px 10px; font-size: 11px; line-height: 1.4;
+    border: 1px solid #d0d7de; border-radius: 6px;
+    background: #ffffff; color: #24292f; cursor: pointer;
+    user-select: none; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .day-btn:hover:not(:disabled) { background: #eaeef2; }
+  .day-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  #day3w-select, #day3w-filter {
+    padding: 5px 10px; font-size: 13px; font-family: inherit;
+    border: 1px solid #d0d7de; border-radius: 6px;
+    background: #ffffff; color: #24292f; cursor: pointer;
+  }
+  #day3w-select:focus, #day3w-filter:focus {
+    outline: none; border-color: #0969da;
+    box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3);
+  }
   /* 3D view: drop the content width cap and fill the viewport height */
   body.wide main { max-width: none; }
   #dist3d { height: calc(100vh - 150px); }
@@ -68,70 +90,57 @@
     border: 1px solid #d0d7de; padding: 6px 10px; text-align: left; font-size: 13px;
   }
   #readme-box th { color: #57606a; }
-  #loud-table {
-    border-collapse: separate; border-spacing: 0; font-size: 13px;
-    min-width: 560px; background: #ffffff; border: 1px solid #d0d7de;
-    border-radius: 8px; overflow: hidden;
-  }
-  #loud-table th, #loud-table td { text-align: left; padding: 5px 14px; }
-  #loud-table thead th { color: #656d76; font-weight: 600; border-bottom: 1px solid #d0d7de; }
-  #loud-table tbody tr + tr td { border-top: 1px solid #eaeef2; }
 
   .hint { color: #656d76; font-size: 12px; }
 </style>
 </head>
 <body>
 <aside>
-  <h1>Nachtunruhe</h1>
+  <div class="header-top">
+    <h1>Nachtunruhe</h1>
+    <div id="meta-footer">
+      <span id="meta-version">Version —</span>
+      <span id="meta-backup">Backup —</span>
+    </div>
+  </div>
   <nav id="nav">
-    <button class="nav-item active" data-view="heatmap">Noise level (3w)</button>
-    <button class="nav-item" data-view="day3w">Hourly episodes (3w)</button>
-    <button class="nav-item" data-view="loudveh">Loud Vehicles (3w)</button>
-    <button class="nav-item" data-view="loudest">Loudest vehicles (3w)</button>
-    <button class="nav-item" data-view="threed">3D &gt;57 dB (7d)</button>
+    <button class="nav-item" data-view="heatmap">Noise level</button>
+    <button class="nav-item" data-view="day3w">Daily chart</button>
+    <button class="nav-item active" data-view="threed">Noisescape</button>
     <button class="nav-item" data-view="live">Last 5 min</button>
     <button class="nav-item" data-view="readme">Readme</button>
   </nav>
-  <div id="meta-footer">
-    <span id="meta-version">Version —</span>
-    <span id="meta-backup">Backup —</span>
-  </div>
 </aside>
 
 <div class="content">
   <main>
-    <section id="view-heatmap">
-      <h2>Noise level (3w)</h2>
-      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · episode loudness above the noise floor, summed per hour, one row per day · raw, no averaging · last 3 weeks · brighter = more load.</div>
+    <section id="view-heatmap" hidden>
+      <h2>Noise level</h2>
+      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · episode loudness above the noise floor, summed per hour, one row per day · raw, no averaging · from Oct 4th onwards · brighter = more load.</div>
       <div id="heatmap-list"></div>
     </section>
 
     <section id="view-day3w" hidden>
-      <h2>Hourly episodes (3w)</h2>
-      <div class="hint" style="margin-bottom:8px">One grid, all noise types pooled · episodes per hour of day, one row per day · raw counts, no averaging · last 3 weeks · band per episode peak level: green audible, yellow loud, red very loud.</div>
-      <div id="day3w-list"></div>
+      <h2>Daily chart</h2>
+      <div class="hint" style="margin-bottom:8px">Spline chart for the selected day and category (All noise types, Speech, Vehicles) · episodes per hour of day (00–23h) · from Oct 4th onwards · three loudness bands: green audible (&lt;62 dB), yellow loud (62–67 dB), red very loud (&ge;67 dB).</div>
+      <div class="day-selector-bar" style="margin: 10px 0 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <button id="day3w-prev" class="day-btn" title="Previous day (older)">&#x25C0;</button>
+        <select id="day3w-select"></select>
+        <button id="day3w-next" class="day-btn" title="Next day (newer)">&#x25B6;</button>
+        <select id="day3w-filter">
+          <option value="All">All noise types</option>
+          <option value="Speech">Speech</option>
+          <option value="Vehicles">Vehicles</option>
+        </select>
+      </div>
+      <div id="day3w-list">
+        <div id="day3w-chart" class="chart"></div>
+      </div>
     </section>
 
-    <section id="view-loudveh" hidden>
-      <h2>Loud Vehicles (3w)</h2>
-      <div class="hint" style="margin-bottom:8px">One grid for the Motor group, like Hourly episodes (3w) · only loud (yellow) and very loud (red) episodes shown · number = such episodes in that hour · last 3 weeks.</div>
-      <div id="loudveh-chart" class="chart"></div>
-    </section>
-
-    <section id="view-loudest" hidden>
-      <h2>Loudest vehicles (3w)</h2>
-      <div class="hint" style="margin-bottom:8px">All vehicle episodes (Motor group) above 67 dB peak in the last three weeks, loudest first · times as HH:mm (24 h) · rows at 22-06h highlighted red.</div>
-      <table id="loud-table">
-        <thead>
-          <tr><th>dB</th><th>Time</th><th>Weekday</th><th>Date</th></tr>
-        </thead>
-        <tbody id="loud-body"></tbody>
-      </table>
-    </section>
-
-    <section id="view-threed" hidden>
-      <h2>By weekday × hour (last 7 days)</h2>
-      <div class="hint" style="margin-bottom:8px">Dot cloud: noise family × weekday × hour of day · dot size = episodes, color = peak loudness (green audible, yellow loud, red very loud) · black line = current weekday at the current hour · last 7 days · drag to rotate.</div>
+    <section id="view-threed">
+      <h2>Noisescape</h2>
+      <div class="hint" style="margin-bottom:8px">Smooth 3D spline surface airstrip (starting at Oct 4th): X = hour of day (00–23), Y = day, Z = noise level (episode loudness above the noise floor, summed per hour) · use <b>Up / Down arrow keys</b> to fly along the surface · drag to rotate, scroll to zoom.</div>
       <div id="dist3d" class="chart"></div>
     </section>
 
@@ -170,39 +179,25 @@
         <h3>The views at a glance</h3>
         <table>
           <tr><th>View</th><th>What you see</th><th>Question it answers</th></tr>
-          <tr><td><b>Noise level (3w)</b></td><td>One grid, all noise types
-              pooled: one row per day (last 3 weeks), hours across. Each cell
+          <tr><td><b>Noise level</b></td><td>One grid, all noise types
+              pooled: one row per day (all weeks), hours across. Each cell
               shows that hour's noise level (episode loudness above the noise
               floor) — raw, no averaging — brighter means more load. Night
               columns (22–06) are tinted light violet, day columns light
               green.</td>
-              <td>"Which days and hours were the noisiest recently?"</td></tr>
-          <tr><td><b>Hourly episodes (3w)</b></td><td>One grid, all noise types
-              pooled: one row per day, hours across. Each cell stacks the
-              episodes of that hour, banded by their <b>peak level</b> —
-              green = audible, yellow = loud, red = very loud. Night
-              columns are tinted light violet, day columns light green.</td>
-              <td>"Which days and hours were noisy — and how loud?"</td></tr>
-          <tr><td><b>Loud Vehicles (3w)</b></td><td>Same grid as Hourly episodes (3w)
-              but only for the <b>Motor</b> family, and only episodes whose
-              peak reached the loud (yellow, 62&nbsp;dB+) or very loud (red,
-              67&nbsp;dB+) range. The number in a cell = such episodes in
-              that hour.</td>
-              <td>"When do the really loud vehicles pass?"</td></tr>
-          <tr><td><b>Loudest vehicles (3w)</b></td><td>All vehicle
-              episodes (Motor family) whose peak level reached 67&nbsp;dB in
-              the last three weeks, loudest first — the view title shows how
-              many there are. Loudness, time, weekday, and date;
-              cells tinted by loudness range; night rows (22:00–06:59) have
-              a violet time cell.</td>
-              <td>"Which vehicles were the loudest recently?"</td></tr>
-          <tr><td><b>3D &gt;57 dB (7d)</b></td><td>A floating dot cloud over
-              hour of day, weekday, and loudness (last 7 days). Dot size =
-              number of episodes; color = loudness range (green audible,
-              yellow loud, red very loud; quiet night dots violet). The
-              black line connects the dots of the <b>current weekday at the
-              current hour</b>. Drag to rotate.</td>
-              <td>"Where do the loud spots cluster?"</td></tr>
+              <td>"Which days and hours were the noisiest?"</td></tr>
+          <tr><td><b>Daily chart</b></td><td>Spline chart for the
+              selected day and category (All noise types, Speech, Vehicles), hours
+              00–23 across. Three smooth curves show the episodes per hour by
+              <b>peak level</b> — green = audible, yellow = loud, red = very loud.</td>
+              <td>"Which hours of that day were noisy — and how loud?"</td></tr>
+          <tr><td><b>Noisescape</b></td><td>A smooth 3D spline surface plot
+              starting at Oct 4th, where X is the hour of day (00–23), Y is
+              the day, and Z is the hourly noise level (same calculation as
+              Noise level). Use the <b>Up and Down arrow keys</b> to fly along
+              the surface toward more recent dates (Up) or back toward Oct 4th
+              (Down) like an airstrip.</td>
+              <td>"How does the hourly noise level evolve across days and hours?"</td></tr>
           <tr><td><b>Last 5 min</b></td><td>A tall strip showing the last
               five minutes, newest on top. Black line = how loud the peaks
               are (dB scale across). Black pills = recognised sounds,
@@ -258,6 +253,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=263"></script>
+<script src="/app.js?v=280"></script>
 </body>
 </html>

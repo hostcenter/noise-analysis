@@ -416,12 +416,24 @@ def api_hourly(
             """
             SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'),
                    CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
-                   COUNT(*), ROUND(AVG(spl), 1), ROUND(MAX(spl), 1),
+                   COUNT(*), ROUND(AVG(spl), 1), ROUND(MAX(COALESCE(spl_peak, spl)), 1),
                    SUM(CASE WHEN COALESCE(spl, -999) >= :mindb THEN 1 ELSE 0 END)
             """ + sql + " GROUP BY 1, 2 ORDER BY 1",
             {**params, "mindb": min_db},
         )
         return {"rows": [[r[0], r[1], r[2], r[3], r[4], r[5]] for r in rows]}
+
+    if by == "daymax":
+        rows = q(
+            """
+            SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'),
+                   CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
+                   ROUND(MAX(COALESCE(spl_peak, spl)), 1),
+                   COUNT(*)
+            """ + sql + " GROUP BY 1, 2 ORDER BY 1, 2",
+            params,
+        )
+        return {"rows": [[r[0], r[1], r[2], r[3]] for r in rows]}
 
     if by == "daybands":
         # audible (<= BAND_LOUD), loud (BAND_LOUD..BAND_VERY), very loud (>= BAND_VERY)
