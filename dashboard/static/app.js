@@ -422,6 +422,19 @@ function applyDist3D() {
   const chart = mkChart("dist3d");
   chart.setOption({
     animation: false,
+    graphic: [
+      {
+        type: "text",
+        left: 16,
+        top: 10,
+        style: {
+          text: "UP & DOWN cursor to fly over landscape",
+          fill: "#57606a",
+          fontSize: 11,
+          fontFamily: "inherit",
+        },
+      },
+    ],
     tooltip: {
       formatter: p => {
         if (!p.value || p.value[2] == null) return "";
@@ -444,7 +457,7 @@ function applyDist3D() {
       calculable: true,
       orient: "horizontal",
       left: 16,
-      top: 10,
+      top: 30,
       itemWidth: 14,
       itemHeight: 160,
       text: ["High", "Noise level: Low"],
@@ -486,7 +499,7 @@ function applyDist3D() {
       },
     },
     grid3D: {
-      boxWidth: 120,
+      boxWidth: 200,
       boxDepth: boxDepth,
       boxHeight: 75,
       axisLine: { lineStyle: { color: "#d0d7de" } },
@@ -500,7 +513,7 @@ function applyDist3D() {
         projection: "perspective",
         alpha: 22,
         beta: 0,
-        distance: 155,
+        distance: 310,
         minDistance: 40,
         maxDistance: 500,
         center: [0, -10, centerZ],
@@ -758,7 +771,6 @@ function renderDaySpline(ds) {
   if (!ds) return;
 
   const hourList = hourCols();
-  const hours = hourList.map(h => String(h).padStart(2, "0"));
   const now = new Date();
   const p2 = n => String(n).padStart(2, "0");
   const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
@@ -769,17 +781,22 @@ function renderDaySpline(ds) {
   const filter = state.selectedFilter3w || "All";
   const filterSuffix = filter !== "All" ? ` \u00B7 ${filter}` : "";
 
+  const [y, m, dd] = ds.split("-");
+  const t0 = Date.UTC(+y, +m - 1, +dd, 0, 0, 0);
+  const tEnd = t0 + 24 * 3600 * 1000;
+
   const audible = [], loud = [], veryLoud = [];
   for (const h of hourList) {
-    if (ds === today && h > nowH) {
-      audible.push(null);
-      loud.push(null);
-      veryLoud.push(null);
+    const t = t0 + (h + 0.5) * 3600 * 1000;
+    if (ds === today && h >= nowH) {
+      audible.push([t, null]);
+      loud.push([t, null]);
+      veryLoud.push([t, null]);
     } else {
-      const [b, y, r] = lookup.get(`${ds}-${h}`) ?? [0, 0, 0];
-      audible.push(b);
-      loud.push(y);
-      veryLoud.push(r);
+      const [b, yVal, r] = lookup.get(`${ds}-${h}`) ?? [0, 0, 0];
+      audible.push([t, b]);
+      loud.push([t, yVal]);
+      veryLoud.push([t, r]);
     }
   }
 
@@ -789,29 +806,49 @@ function renderDaySpline(ds) {
   const chart = mkChart("day3w-chart");
   chart.setOption({
     animation: false,
+    useUTC: true,
     grid: { left: 48, right: 16, top: 18, bottom: 24 },
     tooltip: {
       trigger: "axis",
       formatter: params => {
         const p0 = params[0];
-        if (!p0) return "";
-        const hr = p0.axisValue;
+        if (!p0 || !p0.value) return "";
+        const ts = p0.value[0];
+        const d = new Date(ts);
+        const hr = String(d.getUTCHours()).padStart(2, "0");
         let sum = 0;
         const lines = params
-          .filter(p => p.value != null)
+          .filter(p => p.value && p.value[1] != null)
           .map(p => {
-            sum += p.value;
-            return `${p.marker}${p.seriesName}: <b>${p.value}</b>`;
+            const v = p.value[1];
+            sum += v;
+            return `${p.marker}${p.seriesName}: <b>${v}</b>`;
           });
         if (!lines.length) return `${label}${filterSuffix}, ${hr}:00\u2013${hr}:59`;
         return `${label}${filterSuffix}, ${hr}:00\u2013${hr}:59 (<b>${sum}</b> total)<br>` + lines.join("<br>");
       },
     },
     xAxis: {
-      type: "category",
-      boundaryGap: false,
-      data: hours,
-      axisLabel: { color: "#57606a", fontSize: 11 },
+      type: "time",
+      min: t0,
+      max: tEnd,
+      splitNumber: 24,
+      interval: 3600 * 1000,
+      minInterval: 3600 * 1000,
+      maxInterval: 3600 * 1000,
+      axisLabel: {
+        showMinLabel: true,
+        showMaxLabel: true,
+        hideOverlap: false,
+        formatter: (val) => {
+          if (Math.abs(val - tEnd) < 60000) return "24";
+          const d = new Date(val);
+          return String(d.getUTCHours()).padStart(2, "0");
+        },
+        color: "#57606a",
+        fontSize: 11,
+      },
+      splitLine: { show: true, lineStyle: { color: "#eaeef2" } },
     },
     yAxis: {
       type: "value",
@@ -835,8 +872,8 @@ function renderDaySpline(ds) {
           silent: true,
           itemStyle: { color: "rgba(139,92,246,0.07)" },
           data: [
-            [{ xAxis: "00" }, { xAxis: "07" }],
-            [{ xAxis: "22" }, { xAxis: "23" }],
+            [{ xAxis: t0 }, { xAxis: t0 + 7 * 3600 * 1000 }],
+            [{ xAxis: t0 + 22 * 3600 * 1000 }, { xAxis: tEnd }],
           ],
         },
       },
@@ -1061,7 +1098,7 @@ const VIEW_LOADERS = {
   live: loadLive,
   readme: async () => {},  // static content, nothing to load
 };
-let activeView = "threed";
+let activeView = "heatmap";
 
 async function showView(name) {
   if (!VIEW_LOADERS[name]) return;
@@ -1126,7 +1163,7 @@ async function boot() {
   });
   window.addEventListener("resize", () => Object.values(charts).forEach(c => c.resize()));
 
-  await showView("threed");
+  await showView("heatmap");
   // only the Last-5-min strip auto-refreshes; all other views load on entry
   setInterval(() => {
     if (activeView === "live") loadLive().catch(console.error);
