@@ -737,10 +737,19 @@ function getFilterMembers(filterName) {
     .flatMap(([, m]) => m).join(";");
 }
 
+function getDayHour(ds, hData) {
+  const [y, m, dd] = ds.split("-");
+  const d = new Date(Date.UTC(+y, +m - 1, +dd, hData, 0, 0));
+  const p2 = n => String(n).padStart(2, "0");
+  const dateStr = `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
+  const hour = d.getUTCHours();
+  return { dateStr, hour, ts: d.getTime() };
+}
+
 async function fetchDay3wRows(filterName) {
   if (day3wCache[filterName]) return day3wCache[filterName];
   const p = sinceOct4Params();
-  const from = p.from - 86400;
+  const from = p.from - 86400 * 2;
   const members = getFilterMembers(filterName);
   const heat = await get("/api/hourly", { ...p, from, event: members, by: "daybands" });
   day3wCache[filterName] = heat.rows;
@@ -789,26 +798,29 @@ function renderDaySpline(ds) {
   const t0 = Date.UTC(+y, +m - 1, +dd, 0, 0, 0);
   const tEnd = t0 + 24 * 3600 * 1000;
 
+  const earliestDate = day3wHeatRows.length ? day3wHeatRows.map(r => r[0]).sort()[0] : FROM_DATE;
+
+  const BUFFER = 4; // buffer hours before & after for seamless spline curvature across day boundaries
   const audible = [], loud = [], veryLoud = [];
-  for (let hTick = 0; hTick <= 24; hTick++) {
+  for (let hTick = -BUFFER; hTick <= 24 + BUFFER; hTick++) {
     const t = t0 + hTick * 3600 * 1000;
-    if (hTick === 0) {
-      const [b, yVal, r, bc, yc, rc] = lookup.get(`${prevDay}-23`) ?? [0, 0, 0, 0, 0, 0];
-      audible.push([t, b, bc]);
-      loud.push([t, yVal, yc]);
-      veryLoud.push([t, r, rc]);
-    } else {
-      const hData = hTick - 1;
-      if (ds === today && hData >= nowH) {
+    const hData = hTick - 1;
+    const { dateStr, hour } = getDayHour(ds, hData);
+
+    const isFuture = dateStr > today || (dateStr === today && hour >= nowH);
+    const isPrior = dateStr < earliestDate;
+
+    if (isFuture || isPrior) {
+      if (hTick >= 0 && hTick <= 24) {
         audible.push([t, null, null]);
         loud.push([t, null, null]);
         veryLoud.push([t, null, null]);
-      } else {
-        const [b, yVal, r, bc, yc, rc] = lookup.get(`${ds}-${hData}`) ?? [0, 0, 0, 0, 0, 0];
-        audible.push([t, b, bc]);
-        loud.push([t, yVal, yc]);
-        veryLoud.push([t, r, rc]);
       }
+    } else {
+      const [b, yVal, r, bc, yc, rc] = lookup.get(`${dateStr}-${hour}`) ?? [0, 0, 0, 0, 0, 0];
+      audible.push([t, b, bc]);
+      loud.push([t, yVal, yc]);
+      veryLoud.push([t, r, rc]);
     }
   }
 
@@ -826,7 +838,7 @@ function renderDaySpline(ds) {
         const p0 = params[0];
         if (!p0 || !p0.value) return "";
         const ts = p0.value[0];
-        const hTick = Math.round((ts - t0) / (3600 * 1000));
+        const hTick = Math.max(0, Math.min(24, Math.round((ts - t0) / (3600 * 1000))));
         let dateStr, rangeStr;
         if (hTick === 0) {
           dateStr = prevLabel;
@@ -889,6 +901,7 @@ function renderDaySpline(ds) {
         type: "line",
         stack: "bands",
         smooth: true,
+        clip: true,
         showSymbol: false,
         encode: { x: 0, y: 1 },
         data: audible,
@@ -909,6 +922,7 @@ function renderDaySpline(ds) {
         type: "line",
         stack: "bands",
         smooth: true,
+        clip: true,
         showSymbol: false,
         encode: { x: 0, y: 1 },
         data: loud,
@@ -921,6 +935,7 @@ function renderDaySpline(ds) {
         type: "line",
         stack: "bands",
         smooth: true,
+        clip: true,
         showSymbol: false,
         encode: { x: 0, y: 1 },
         data: veryLoud,
