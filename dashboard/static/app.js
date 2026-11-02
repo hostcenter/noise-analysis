@@ -740,8 +740,9 @@ function getFilterMembers(filterName) {
 async function fetchDay3wRows(filterName) {
   if (day3wCache[filterName]) return day3wCache[filterName];
   const p = sinceOct4Params();
+  const from = p.from - 86400;
   const members = getFilterMembers(filterName);
-  const heat = await get("/api/hourly", { ...p, event: members, by: "daybands" });
+  const heat = await get("/api/hourly", { ...p, from, event: members, by: "daybands" });
   day3wCache[filterName] = heat.rows;
   return heat.rows;
 }
@@ -771,33 +772,43 @@ function stepDay(delta) {
 function renderDaySpline(ds) {
   if (!ds) return;
 
-  const hourList = hourCols();
   const now = new Date();
   const p2 = n => String(n).padStart(2, "0");
   const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
   const nowH = now.getHours();
-  const filtered = day3wHeatRows.filter(r => r[0] >= FROM_DATE);
-  const lookup = new Map(filtered.map(([d, h, b, y, r, bc, yc, rc]) => [`${d}-${h}`, [b, y, r, bc, yc, rc]]));
+  const lookup = new Map(day3wHeatRows.map(([d, h, b, y, r, bc, yc, rc]) => [`${d}-${h}`, [b, y, r, bc, yc, rc]]));
   const label = formatDaySelector(ds);
   const filter = state.selectedFilter3w || "All";
   const filterSuffix = filter !== "All" ? ` \u00B7 ${filter}` : "";
 
   const [y, m, dd] = ds.split("-");
+  const prevD = new Date(Date.UTC(+y, +m - 1, +dd - 1));
+  const prevDay = `${prevD.getUTCFullYear()}-${p2(prevD.getUTCMonth() + 1)}-${p2(prevD.getUTCDate())}`;
+  const prevLabel = formatDaySelector(prevDay);
+
   const t0 = Date.UTC(+y, +m - 1, +dd, 0, 0, 0);
   const tEnd = t0 + 24 * 3600 * 1000;
 
   const audible = [], loud = [], veryLoud = [];
-  for (const h of hourList) {
-    const t = t0 + (h + 0.5) * 3600 * 1000;
-    if (ds === today && h >= nowH) {
-      audible.push([t, null, null]);
-      loud.push([t, null, null]);
-      veryLoud.push([t, null, null]);
-    } else {
-      const [b, yVal, r, bc, yc, rc] = lookup.get(`${ds}-${h}`) ?? [0, 0, 0, 0, 0, 0];
+  for (let hTick = 0; hTick <= 24; hTick++) {
+    const t = t0 + hTick * 3600 * 1000;
+    if (hTick === 0) {
+      const [b, yVal, r, bc, yc, rc] = lookup.get(`${prevDay}-23`) ?? [0, 0, 0, 0, 0, 0];
       audible.push([t, b, bc]);
       loud.push([t, yVal, yc]);
       veryLoud.push([t, r, rc]);
+    } else {
+      const hData = hTick - 1;
+      if (ds === today && hData >= nowH) {
+        audible.push([t, null, null]);
+        loud.push([t, null, null]);
+        veryLoud.push([t, null, null]);
+      } else {
+        const [b, yVal, r, bc, yc, rc] = lookup.get(`${ds}-${hData}`) ?? [0, 0, 0, 0, 0, 0];
+        audible.push([t, b, bc]);
+        loud.push([t, yVal, yc]);
+        veryLoud.push([t, r, rc]);
+      }
     }
   }
 
@@ -815,8 +826,16 @@ function renderDaySpline(ds) {
         const p0 = params[0];
         if (!p0 || !p0.value) return "";
         const ts = p0.value[0];
-        const d = new Date(ts);
-        const hr = String(d.getUTCHours()).padStart(2, "0");
+        const hTick = Math.round((ts - t0) / (3600 * 1000));
+        let dateStr, rangeStr;
+        if (hTick === 0) {
+          dateStr = prevLabel;
+          rangeStr = "23:00\u201323:59";
+        } else {
+          dateStr = label;
+          const hStart = String(hTick - 1).padStart(2, "0");
+          rangeStr = `${hStart}:00\u2013${hStart}:59`;
+        }
         let sumLoad = 0;
         let sumCount = 0;
         const lines = params
@@ -829,10 +848,10 @@ function renderDaySpline(ds) {
             const epStr = `${cnt} ${cnt === 1 ? "episode" : "episodes"}`;
             return `${p.marker}${p.seriesName}: <b>${v.toFixed(1)}</b> (${epStr})`;
           });
-        if (!lines.length) return `${label}${filterSuffix}, ${hr}:00\u2013${hr}:59`;
+        if (!lines.length) return `${dateStr}${filterSuffix}, ${rangeStr}`;
         const totalLoadStr = (Math.round(sumLoad * 10) / 10).toFixed(1);
         const totalEpStr = `${sumCount} ${sumCount === 1 ? "episode" : "episodes"}`;
-        return `${label}${filterSuffix}, ${hr}:00\u2013${hr}:59 (noise level <b>${totalLoadStr}</b> \u00B7 <b>${totalEpStr}</b>)<br>` + lines.join("<br>");
+        return `${dateStr}${filterSuffix}, ${rangeStr} (noise level <b>${totalLoadStr}</b> \u00B7 <b>${totalEpStr}</b>)<br>` + lines.join("<br>");
       },
     },
     xAxis: {
