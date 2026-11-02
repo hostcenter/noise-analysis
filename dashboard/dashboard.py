@@ -438,18 +438,23 @@ def api_hourly(
     if by == "daybands":
         # audible (<= BAND_LOUD), loud (BAND_LOUD..BAND_VERY), very loud (>= BAND_VERY)
         # bands key off the episode's strict peak level (spl_peak; falls back
-        # to the confidence-moment spl for legacy rows without a peak)
+        # to the confidence-moment spl for legacy rows without a peak).
+        # returns both noise level (episodes x loudness above -60 dBFS noise floor)
+        # and episode counts for each band: [date, hour, b_load, y_load, r_load, b_cnt, y_cnt, r_cnt]
         rows = q(
             """
             SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'),
                    CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
+                   ROUND(SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) < :b1 THEN MAX(COALESCE(spl_peak, spl, -60) + 60, 0) ELSE 0 END), 1),
+                   ROUND(SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b1 AND COALESCE(COALESCE(spl_peak, spl), -999) < :b2 THEN MAX(COALESCE(spl_peak, spl, -60) + 60, 0) ELSE 0 END), 1),
+                   ROUND(SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b2 THEN MAX(COALESCE(spl_peak, spl, -60) + 60, 0) ELSE 0 END), 1),
                    SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) < :b1 THEN 1 ELSE 0 END),
                    SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b1 AND COALESCE(COALESCE(spl_peak, spl), -999) < :b2 THEN 1 ELSE 0 END),
                    SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b2 THEN 1 ELSE 0 END)
             """ + sql + " GROUP BY 1, 2 ORDER BY 1",
             {**params, "b1": BAND_LOUD, "b2": BAND_VERY},
         )
-        return {"rows": [[r[0], r[1], r[2], r[3], r[4]] for r in rows]}
+        return {"rows": [[r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]] for r in rows]}
 
     if by == "dayload":
         rows = q(

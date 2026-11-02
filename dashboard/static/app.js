@@ -777,7 +777,7 @@ function renderDaySpline(ds) {
   const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
   const nowH = now.getHours();
   const filtered = day3wHeatRows.filter(r => r[0] >= FROM_DATE);
-  const lookup = new Map(filtered.map(([d, h, b, y, r]) => [`${d}-${h}`, [b, y, r]]));
+  const lookup = new Map(filtered.map(([d, h, b, y, r, bc, yc, rc]) => [`${d}-${h}`, [b, y, r, bc, yc, rc]]));
   const label = formatDaySelector(ds);
   const filter = state.selectedFilter3w || "All";
   const filterSuffix = filter !== "All" ? ` \u00B7 ${filter}` : "";
@@ -790,14 +790,14 @@ function renderDaySpline(ds) {
   for (const h of hourList) {
     const t = t0 + (h + 0.5) * 3600 * 1000;
     if (ds === today && h >= nowH) {
-      audible.push([t, null]);
-      loud.push([t, null]);
-      veryLoud.push([t, null]);
+      audible.push([t, null, null]);
+      loud.push([t, null, null]);
+      veryLoud.push([t, null, null]);
     } else {
-      const [b, yVal, r] = lookup.get(`${ds}-${h}`) ?? [0, 0, 0];
-      audible.push([t, b]);
-      loud.push([t, yVal]);
-      veryLoud.push([t, r]);
+      const [b, yVal, r, bc, yc, rc] = lookup.get(`${ds}-${h}`) ?? [0, 0, 0, 0, 0, 0];
+      audible.push([t, b, bc]);
+      loud.push([t, yVal, yc]);
+      veryLoud.push([t, r, rc]);
     }
   }
 
@@ -808,7 +808,7 @@ function renderDaySpline(ds) {
   chart.setOption({
     animation: false,
     useUTC: true,
-    grid: { left: 48, right: 16, top: 18, bottom: 24 },
+    grid: { left: 56, right: 16, top: 18, bottom: 24 },
     tooltip: {
       trigger: "axis",
       formatter: params => {
@@ -817,16 +817,22 @@ function renderDaySpline(ds) {
         const ts = p0.value[0];
         const d = new Date(ts);
         const hr = String(d.getUTCHours()).padStart(2, "0");
-        let sum = 0;
+        let sumLoad = 0;
+        let sumCount = 0;
         const lines = params
           .filter(p => p.value && p.value[1] != null)
           .map(p => {
-            const v = p.value[1];
-            sum += v;
-            return `${p.marker}${p.seriesName}: <b>${v}</b>`;
+            const v = Number(p.value[1]) || 0;
+            const cnt = Number(p.value[2]) || 0;
+            sumLoad += v;
+            sumCount += cnt;
+            const epStr = `${cnt} ${cnt === 1 ? "episode" : "episodes"}`;
+            return `${p.marker}${p.seriesName}: <b>${v.toFixed(1)}</b> (${epStr})`;
           });
         if (!lines.length) return `${label}${filterSuffix}, ${hr}:00\u2013${hr}:59`;
-        return `${label}${filterSuffix}, ${hr}:00\u2013${hr}:59 (<b>${sum}</b> total)<br>` + lines.join("<br>");
+        const totalLoadStr = (Math.round(sumLoad * 10) / 10).toFixed(1);
+        const totalEpStr = `${sumCount} ${sumCount === 1 ? "episode" : "episodes"}`;
+        return `${label}${filterSuffix}, ${hr}:00\u2013${hr}:59 (noise level <b>${totalLoadStr}</b> \u00B7 <b>${totalEpStr}</b>)<br>` + lines.join("<br>");
       },
     },
     xAxis: {
@@ -865,6 +871,7 @@ function renderDaySpline(ds) {
         stack: "bands",
         smooth: true,
         showSymbol: false,
+        encode: { x: 0, y: 1 },
         data: audible,
         itemStyle: { color: "#1a7f37" },
         lineStyle: { width: 2, color: "#1a7f37" },
@@ -884,6 +891,7 @@ function renderDaySpline(ds) {
         stack: "bands",
         smooth: true,
         showSymbol: false,
+        encode: { x: 0, y: 1 },
         data: loud,
         itemStyle: { color: "#f59f00" },
         lineStyle: { width: 2, color: "#f59f00" },
@@ -895,6 +903,7 @@ function renderDaySpline(ds) {
         stack: "bands",
         smooth: true,
         showSymbol: false,
+        encode: { x: 0, y: 1 },
         data: veryLoud,
         itemStyle: { color: "#cf222e" },
         lineStyle: { width: 2, color: "#cf222e" },
@@ -911,7 +920,7 @@ async function loadDay3w() {
 
   // Preload "All" so the view's global maximum is always known and fixed
   const allRows = await fetchDay3wRows("All");
-  day3wGlobalMax = Math.max(5, ...allRows.filter(r => r[0] >= FROM_DATE).map(([, , b, y, r]) => b + y + r));
+  day3wGlobalMax = Math.ceil(Math.max(5, ...allRows.filter(r => r[0] >= FROM_DATE).map(([, , b, y, r]) => b + y + r)));
 
   const filterSel = document.getElementById("day3w-filter");
   if (filterSel) {

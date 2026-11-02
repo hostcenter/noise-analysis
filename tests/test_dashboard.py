@@ -76,6 +76,45 @@ class TestNoiseLoadCalculation(unittest.TestCase):
         self.assertLess(rows[1][1], rows[2][1])
         con.close()
 
+    def test_daybands_load_and_counts(self):
+        con = sqlite3.connect(":memory:")
+        con.executescript(dashboard.SCHEMA)
+
+        # 3 events at the same hour
+        # b1 = -44.6, b2 = -39.6
+        # Event 1: -58.0 dBFS -> Audible (< -44.6), load = 2.0
+        # Event 2: -42.0 dBFS -> Loud (-44.6 .. -39.6), load = 18.0
+        # Event 3: -30.0 dBFS -> Very loud (>= -39.6), load = 30.0
+        t_base = 1791000000.0
+        events = [
+            (t_base, "Speech", 0.9, -58.0, 5.0, -58.0),
+            (t_base + 10, "Car", 0.9, -42.0, 5.0, -42.0),
+            (t_base + 20, "Motorcycle", 0.9, -30.0, 5.0, -30.0),
+        ]
+        con.executemany("INSERT INTO events VALUES (?, ?, ?, ?, ?, ?)", events)
+
+        row = con.execute("""
+            SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime'),
+                   CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER),
+                   ROUND(SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) < :b1 THEN MAX(COALESCE(spl_peak, spl, -60) + 60, 0) ELSE 0 END), 1),
+                   ROUND(SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b1 AND COALESCE(COALESCE(spl_peak, spl), -999) < :b2 THEN MAX(COALESCE(spl_peak, spl, -60) + 60, 0) ELSE 0 END), 1),
+                   ROUND(SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b2 THEN MAX(COALESCE(spl_peak, spl, -60) + 60, 0) ELSE 0 END), 1),
+                   SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) < :b1 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b1 AND COALESCE(COALESCE(spl_peak, spl), -999) < :b2 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(COALESCE(spl_peak, spl), -999) >= :b2 THEN 1 ELSE 0 END)
+            FROM events
+            GROUP BY 1, 2
+        """, {"b1": dashboard.BAND_LOUD, "b2": dashboard.BAND_VERY}).fetchone()
+
+        # date, hour, b_load, y_load, r_load, b_cnt, y_cnt, r_cnt
+        self.assertEqual(row[2], 2.0)
+        self.assertEqual(row[3], 18.0)
+        self.assertEqual(row[4], 30.0)
+        self.assertEqual(row[5], 1)
+        self.assertEqual(row[6], 1)
+        self.assertEqual(row[7], 1)
+        con.close()
+
 
 class TestDashboardIngestion(unittest.TestCase):
     def setUp(self):
