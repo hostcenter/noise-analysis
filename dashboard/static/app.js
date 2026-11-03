@@ -1142,7 +1142,7 @@ const VIEW_LOADERS = {
   live: loadLive,
   readme: async () => {},  // static content, nothing to load
 };
-let activeView = "heatmap";
+let activeView = "day3w";
 
 async function showView(name) {
   if (!VIEW_LOADERS[name]) return;
@@ -1207,7 +1207,7 @@ async function boot() {
   });
   window.addEventListener("resize", () => Object.values(charts).forEach(c => c.resize()));
 
-  await showView("heatmap");
+  await showView("day3w");
   // only the Last-5-min strip auto-refreshes; all other views load on entry
   setInterval(() => {
     if (activeView === "live") loadLive().catch(console.error);

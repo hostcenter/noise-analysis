@@ -104,21 +104,17 @@
     </div>
   </div>
   <nav id="nav">
-    <button class="nav-item active" data-view="heatmap">Noise level</button>
-    <button class="nav-item" data-view="day3w">Daily chart</button>
+    <button class="nav-item active" data-view="day3w">Day</button>
     <button class="nav-item" data-view="threed">Noisescape</button>
     <button class="nav-item" data-view="live">Last 5 min</button>
+    <button class="nav-item" data-view="heatmap">Noise level</button>
     <button class="nav-item" data-view="readme">Readme</button>
   </nav>
 </aside>
 
 <div class="content">
   <main>
-    <section id="view-heatmap">
-      <div id="heatmap-list"></div>
-    </section>
-
-    <section id="view-day3w" hidden>
+    <section id="view-day3w">
       <div class="day-selector-bar" style="margin: 0 0 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <button id="day3w-prev" class="day-btn" title="Previous day (older)">&#x25C0;</button>
         <select id="day3w-select"></select>
@@ -140,6 +136,10 @@
 
     <section id="view-live" hidden>
       <div id="live" class="chart"></div>
+    </section>
+
+    <section id="view-heatmap" hidden>
+      <div id="heatmap-list"></div>
     </section>
 
     <section id="view-readme" hidden>
@@ -170,14 +170,7 @@
         <h3>The views at a glance</h3>
         <table>
           <tr><th>View</th><th>What you see</th><th>Question it answers</th></tr>
-          <tr><td><b>Noise level</b></td><td>One grid, all noise types
-              pooled: one row per day (all weeks), hours across. Each cell
-              shows that hour's noise level (episode loudness above the noise
-              floor) — raw, no averaging — brighter means more load. Night
-              columns (22–06) are tinted light violet, day columns light
-              green.</td>
-              <td>"Which days and hours were the noisiest?"</td></tr>
-          <tr><td><b>Daily chart</b></td><td>Spline chart for the
+          <tr><td><b>Day</b></td><td>Spline chart for the
               selected day and category (All noise types, Speech, Vehicles), hours
               00–23 across. Three smooth curves show the hourly noise level (episodes &times; loudness) by
               <b>peak level</b> — green = audible, yellow = loud, red = very loud.</td>
@@ -196,6 +189,13 @@
               tinted by loudness range: green = audible, yellow = loud,
               red = very loud.</td>
               <td>"What is happening right now?"</td></tr>
+          <tr><td><b>Noise level</b></td><td>One grid, all noise types
+              pooled: one row per day (all weeks), hours across. Each cell
+              shows that hour's noise level (episode loudness above the noise
+              floor) — raw, no averaging — brighter means more load. Night
+              columns (22–06) are tinted light violet, day columns light
+              green.</td>
+              <td>"Which days and hours were the noisiest?"</td></tr>
         </table>
 
         <h3>How loud is "loud"? (the dB numbers)</h3>
@@ -244,6 +244,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=294"></script>
+<script src="/app.js?v=295"></script>
 </body>
 </html>
