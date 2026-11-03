@@ -417,6 +417,8 @@ async function loadDist3D() {
   applyDist3D();
 }
 
+const NOISESCAPE_COLORS = ["#1a7f37", "#2f9e44", "#8ce99a", "#f59f00", "#e8590c", "#cf222e", "#82071e"];
+
 function applyDist3D() {
   const { data, dataShape, days, labels, lookup, maxLoad, zMax, boxDepth, centerZ } = dist3dState;
   const chart = mkChart("dist3d");
@@ -463,7 +465,7 @@ function applyDist3D() {
       itemHeight: 160,
       text: ["High", "Noise level: Low"],
       inRange: {
-        color: ["#1a7f37", "#2f9e44", "#8ce99a", "#f59f00", "#e8590c", "#cf222e", "#82071e"],
+        color: NOISESCAPE_COLORS,
       },
       textStyle: { color: "#57606a", fontSize: 11 },
     },
@@ -543,8 +545,7 @@ function applyDist3D() {
 function hexToRgb(hex) {
   return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 }
-const RED_STOPS = ["#ffebe9", "#ff9b9b", "#cf222e", "#82071e"].map(hexToRgb);
-const GREEN_STOPS = ["#e3f7e8", "#8ce99a", "#2f9e44", "#1a7f37"].map(hexToRgb);
+const NOISESCAPE_STOPS = NOISESCAPE_COLORS.map(hexToRgb);
 // greyscale twin of the ramps above — marks the cell of the actual day+hour
 const GREY_STOPS = ["#f4f4f4", "#c8c8c8", "#8a8a8a", "#3d3d3d"].map(hexToRgb);
 // greyscale loudness bands: audible, loud, very loud (louder = darker)
@@ -1082,9 +1083,8 @@ function drawDayLoad(id, rows, maxLoad) {
   days.forEach((ds, yi) => {
     for (const h of hourList) {
       const v = lookup.get(`${ds}-${h}`) ?? 0;
-      const night = +h >= 22 || +h <= 6;
       const isNow = ds === today && +h === nowH;
-      const stops = isNow ? GREY_STOPS : night ? RED_STOPS : GREEN_STOPS;
+      const stops = isNow ? GREY_STOPS : NOISESCAPE_STOPS;
       const t = Math.min(Math.max((v / maxLoad) * (stops.length - 1), 0), stops.length - 1.001);
       const seg = Math.floor(t), f = t - seg;
       const c = stops[seg].map((x, i2) => Math.round(x + (stops[seg + 1][i2] - x) * f));
