@@ -105,8 +105,8 @@
   </div>
   <nav id="nav">
     <button class="nav-item active" data-view="day3w">Today</button>
-    <button class="nav-item" data-view="threed">Noisescape</button>
     <button class="nav-item" data-view="heatmap">Noisemap</button>
+    <button class="nav-item" data-view="threed">Noisescape</button>
     <button class="nav-item" data-view="live">Last 5 min</button>
     <button class="nav-item" data-view="readme">Readme</button>
   </nav>
@@ -130,12 +130,12 @@
       </div>
     </section>
 
-    <section id="view-threed" hidden>
-      <div id="dist3d" class="chart"></div>
-    </section>
-
     <section id="view-heatmap" hidden>
       <div id="heatmap-list"></div>
+    </section>
+
+    <section id="view-threed" hidden>
+      <div id="dist3d" class="chart"></div>
     </section>
 
     <section id="view-live" hidden>
@@ -175,13 +175,6 @@
               00–23 across. Three smooth curves show the hourly noise level (episodes &times; loudness) by
               <b>peak level</b> — green = audible, yellow = loud, red = very loud.</td>
               <td>"Which hours of that day were noisy — and how loud?"</td></tr>
-          <tr><td><b>Noisescape</b></td><td>A smooth 3D spline surface plot
-              starting at Oct 4th, where X is the hour of day (00–23), Y is
-              the day, and Z is the hourly noise level (same calculation as
-              Noisemap). Use the <b>Up and Down arrow keys</b> to fly along
-              the surface toward more recent dates (Up) or back toward Oct 4th
-              (Down) like an airstrip.</td>
-              <td>"How does the hourly noise level evolve across days and hours?"</td></tr>
           <tr><td><b>Noisemap</b></td><td>One grid, all noise types
               pooled: one row per day (all weeks), hours across. Each cell
               shows that hour's noise level (episode loudness above the noise
@@ -189,6 +182,13 @@
               columns (22–06) are tinted light violet, day columns light
               green.</td>
               <td>"Which days and hours were the noisiest?"</td></tr>
+          <tr><td><b>Noisescape</b></td><td>A smooth 3D spline surface plot
+              starting at Oct 4th, where X is the hour of day (00–23), Y is
+              the day, and Z is the hourly noise level (same calculation as
+              Noisemap). Use the <b>Up and Down arrow keys</b> to fly along
+              the surface toward more recent dates (Up) or back toward Oct 4th
+              (Down) like an airstrip.</td>
+              <td>"How does the hourly noise level evolve across days and hours?"</td></tr>
           <tr><td><b>Last 5 min</b></td><td>A tall strip showing the last
               five minutes, newest on top. Black line = how loud the peaks
               are (dB scale across). Black pills = recognised sounds,
@@ -244,6 +244,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=300"></script>
+<script src="/app.js?v=301"></script>
 </body>
 </html>
