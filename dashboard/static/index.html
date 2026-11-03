@@ -104,10 +104,10 @@
     </div>
   </div>
   <nav id="nav">
-    <button class="nav-item active" data-view="day3w">Day</button>
+    <button class="nav-item active" data-view="day3w">Today</button>
     <button class="nav-item" data-view="threed">Noisescape</button>
+    <button class="nav-item" data-view="heatmap">Noisemap</button>
     <button class="nav-item" data-view="live">Last 5 min</button>
-    <button class="nav-item" data-view="heatmap">Noise level</button>
     <button class="nav-item" data-view="readme">Readme</button>
   </nav>
 </aside>
@@ -134,12 +134,12 @@
       <div id="dist3d" class="chart"></div>
     </section>
 
-    <section id="view-live" hidden>
-      <div id="live" class="chart"></div>
-    </section>
-
     <section id="view-heatmap" hidden>
       <div id="heatmap-list"></div>
+    </section>
+
+    <section id="view-live" hidden>
+      <div id="live" class="chart"></div>
     </section>
 
     <section id="view-readme" hidden>
@@ -170,7 +170,7 @@
         <h3>The views at a glance</h3>
         <table>
           <tr><th>View</th><th>What you see</th><th>Question it answers</th></tr>
-          <tr><td><b>Day</b></td><td>Spline chart for the
+          <tr><td><b>Today</b></td><td>Spline chart for the
               selected day and category (All noise types, Speech, Vehicles), hours
               00–23 across. Three smooth curves show the hourly noise level (episodes &times; loudness) by
               <b>peak level</b> — green = audible, yellow = loud, red = very loud.</td>
@@ -178,10 +178,17 @@
           <tr><td><b>Noisescape</b></td><td>A smooth 3D spline surface plot
               starting at Oct 4th, where X is the hour of day (00–23), Y is
               the day, and Z is the hourly noise level (same calculation as
-              Noise level). Use the <b>Up and Down arrow keys</b> to fly along
+              Noisemap). Use the <b>Up and Down arrow keys</b> to fly along
               the surface toward more recent dates (Up) or back toward Oct 4th
               (Down) like an airstrip.</td>
               <td>"How does the hourly noise level evolve across days and hours?"</td></tr>
+          <tr><td><b>Noisemap</b></td><td>One grid, all noise types
+              pooled: one row per day (all weeks), hours across. Each cell
+              shows that hour's noise level (episode loudness above the noise
+              floor) — raw, no averaging — brighter means more load. Night
+              columns (22–06) are tinted light violet, day columns light
+              green.</td>
+              <td>"Which days and hours were the noisiest?"</td></tr>
           <tr><td><b>Last 5 min</b></td><td>A tall strip showing the last
               five minutes, newest on top. Black line = how loud the peaks
               are (dB scale across). Black pills = recognised sounds,
@@ -189,13 +196,6 @@
               tinted by loudness range: green = audible, yellow = loud,
               red = very loud.</td>
               <td>"What is happening right now?"</td></tr>
-          <tr><td><b>Noise level</b></td><td>One grid, all noise types
-              pooled: one row per day (all weeks), hours across. Each cell
-              shows that hour's noise level (episode loudness above the noise
-              floor) — raw, no averaging — brighter means more load. Night
-              columns (22–06) are tinted light violet, day columns light
-              green.</td>
-              <td>"Which days and hours were the noisiest?"</td></tr>
         </table>
 
         <h3>How loud is "loud"? (the dB numbers)</h3>
@@ -244,6 +244,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=295"></script>
+<script src="/app.js?v=296"></script>
 </body>
 </html>
