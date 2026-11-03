@@ -543,10 +543,10 @@ function applyDist3D() {
 function hexToRgb(hex) {
   return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 }
-const VIOLET_STOPS = ["#f6effc", "#d8b4fe", "#a855f7", "#6b21a8"].map(hexToRgb);
-const GREEN_STOPS = ["#e3f7e8", "#8ce99a", "#2f9e44", "#1a7f37"].map(hexToRgb);
+const VIOLET_STOPS = ["#f6effc", "#d8b4fe", "#a855f7", "#f59f00", "#e8590c", "#cf222e", "#82071e"].map(hexToRgb);
+const GREEN_STOPS = ["#e3f7e8", "#8ce99a", "#2f9e44", "#f59f00", "#e8590c", "#cf222e", "#82071e"].map(hexToRgb);
 // greyscale twin of the ramps above — marks the cell of the actual day+hour
-const GREY_STOPS = ["#f4f4f4", "#c8c8c8", "#8a8a8a", "#3d3d3d"].map(hexToRgb);
+const GREY_STOPS = ["#f4f4f4", "#d0d0d0", "#a8a8a8", "#808080", "#555555", "#333333", "#111111"].map(hexToRgb);
 // greyscale loudness bands: audible, loud, very loud (louder = darker)
 const NOW_BANDS = ["#b3b3b3", "#7a7a7a", "#333333"];
 
