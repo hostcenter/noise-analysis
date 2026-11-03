@@ -1074,7 +1074,6 @@ function drawDayLoad(id, rows, maxLoad) {
   const hourIdx = new Map(hourList.map((h, i) => [h, i]));
   const days = [...new Set(rows.map(r => r[0]).filter(ds => ds >= FROM_DATE))].sort();
   const lookup = new Map(rows.map(([ds, h, v]) => [`${ds}-${h}`, v]));
-  // cell of the actual day+hour → greyscale ramp instead of color
   const now = new Date();
   const p2 = n => String(n).padStart(2, "0");
   const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
@@ -1084,13 +1083,14 @@ function drawDayLoad(id, rows, maxLoad) {
     for (const h of hourList) {
       const v = lookup.get(`${ds}-${h}`) ?? 0;
       const isNow = ds === today && +h === nowH;
-      const stops = isNow ? GREY_STOPS : NOISESCAPE_STOPS;
-      const t = Math.min(Math.max((v / maxLoad) * (stops.length - 1), 0), stops.length - 1.001);
-      const seg = Math.floor(t), f = t - seg;
-      const c = stops[seg].map((x, i2) => Math.round(x + (stops[seg + 1][i2] - x) * f));
+      const t = Math.min(Math.max(v / maxLoad, 0), 1);
+      const ch = Math.round(255 * (1 - t));
       data.push({
         value: [hourIdx.get(+h), yi, v],
-        itemStyle: { color: `rgb(${c[0]},${c[1]},${c[2]})` },
+        itemStyle: {
+          color: `rgb(${ch},${ch},${ch})`,
+          ...(isNow ? { borderColor: "#0969da", borderWidth: 2 } : {}),
+        },
       });
     }
   });
@@ -1107,7 +1107,13 @@ function drawDayLoad(id, rows, maxLoad) {
     },
     xAxis: { type: "category", data: hours, position: "top" },
     yAxis: { type: "category", data: labels, axisLabel: { color: "#57606a", interval: 0 } },
-    series: [{ type: "heatmap", data }],
+    series: [
+      {
+        type: "heatmap",
+        data,
+        itemStyle: { borderColor: "#eaeef2", borderWidth: 1 },
+      },
+    ],
   });
   chart.resize();
 }
