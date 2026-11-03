@@ -417,8 +417,6 @@ async function loadDist3D() {
   applyDist3D();
 }
 
-const NOISESCAPE_COLORS = ["#1a7f37", "#2f9e44", "#8ce99a", "#f59f00", "#e8590c", "#cf222e", "#82071e"];
-
 function applyDist3D() {
   const { data, dataShape, days, labels, lookup, maxLoad, zMax, boxDepth, centerZ } = dist3dState;
   const chart = mkChart("dist3d");
@@ -465,7 +463,7 @@ function applyDist3D() {
       itemHeight: 160,
       text: ["High", "Noise level: Low"],
       inRange: {
-        color: NOISESCAPE_COLORS,
+        color: ["#1a7f37", "#2f9e44", "#8ce99a", "#f59f00", "#e8590c", "#cf222e", "#82071e"],
       },
       textStyle: { color: "#57606a", fontSize: 11 },
     },
@@ -545,7 +543,8 @@ function applyDist3D() {
 function hexToRgb(hex) {
   return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 }
-const NOISESCAPE_STOPS = NOISESCAPE_COLORS.map(hexToRgb);
+const VIOLET_STOPS = ["#f6effc", "#d8b4fe", "#a855f7", "#6b21a8"].map(hexToRgb);
+const GREEN_STOPS = ["#e3f7e8", "#8ce99a", "#2f9e44", "#1a7f37"].map(hexToRgb);
 // greyscale twin of the ramps above — marks the cell of the actual day+hour
 const GREY_STOPS = ["#f4f4f4", "#c8c8c8", "#8a8a8a", "#3d3d3d"].map(hexToRgb);
 // greyscale loudness bands: audible, loud, very loud (louder = darker)
@@ -1074,6 +1073,7 @@ function drawDayLoad(id, rows, maxLoad) {
   const hourIdx = new Map(hourList.map((h, i) => [h, i]));
   const days = [...new Set(rows.map(r => r[0]).filter(ds => ds >= FROM_DATE))].sort();
   const lookup = new Map(rows.map(([ds, h, v]) => [`${ds}-${h}`, v]));
+  // cell of the actual day+hour → greyscale ramp instead of color
   const now = new Date();
   const p2 = n => String(n).padStart(2, "0");
   const today = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
@@ -1082,15 +1082,15 @@ function drawDayLoad(id, rows, maxLoad) {
   days.forEach((ds, yi) => {
     for (const h of hourList) {
       const v = lookup.get(`${ds}-${h}`) ?? 0;
+      const night = +h >= 22 || +h <= 6;
       const isNow = ds === today && +h === nowH;
-      const t = Math.min(Math.max(v / maxLoad, 0), 1);
-      const ch = Math.round(255 * (1 - t));
+      const stops = isNow ? GREY_STOPS : night ? VIOLET_STOPS : GREEN_STOPS;
+      const t = Math.min(Math.max((v / maxLoad) * (stops.length - 1), 0), stops.length - 1.001);
+      const seg = Math.floor(t), f = t - seg;
+      const c = stops[seg].map((x, i2) => Math.round(x + (stops[seg + 1][i2] - x) * f));
       data.push({
         value: [hourIdx.get(+h), yi, v],
-        itemStyle: {
-          color: `rgb(${ch},${ch},${ch})`,
-          ...(isNow ? { borderColor: "#0969da", borderWidth: 2 } : {}),
-        },
+        itemStyle: { color: `rgb(${c[0]},${c[1]},${c[2]})` },
       });
     }
   });
@@ -1107,13 +1107,7 @@ function drawDayLoad(id, rows, maxLoad) {
     },
     xAxis: { type: "category", data: hours, position: "top" },
     yAxis: { type: "category", data: labels, axisLabel: { color: "#57606a", interval: 0 } },
-    series: [
-      {
-        type: "heatmap",
-        data,
-        itemStyle: { borderColor: "#eaeef2", borderWidth: 1 },
-      },
-    ],
+    series: [{ type: "heatmap", data }],
   });
   chart.resize();
 }
