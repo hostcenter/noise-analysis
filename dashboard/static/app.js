@@ -721,6 +721,7 @@ let day3wHeatRows = [];
 let day3wWheelAt = 0;
 let day3wGlobalMax = null;
 const day3wCache = {};
+let day3wKeyBound = false;
 
 function getFilterMembers(filterName) {
   if (filterName === "Vehicles") {
@@ -1003,16 +1004,6 @@ async function loadDay3w() {
     sel.onchange = onSelectChange;
     sel.oninput = onSelectChange;
 
-    sel.onkeydown = e => {
-      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
-        e.preventDefault();
-        stepDay(1); // older day
-      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
-        e.preventDefault();
-        stepDay(-1); // newer day
-      }
-    };
-
     sel.onwheel = e => {
       const now = Date.now();
       if (now - day3wWheelAt < 160) return;
@@ -1026,6 +1017,21 @@ async function loadDay3w() {
         stepDay(-1); // newer day
       }
     };
+  }
+
+  if (!day3wKeyBound) {
+    day3wKeyBound = true;
+    window.addEventListener("keydown", e => {
+      if (activeView !== "day3w") return;
+      if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        stepDay(1); // left cursor: back in time (older)
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        stepDay(-1); // right cursor: to the future (newer)
+      }
+    });
   }
 
   if (prevBtn) prevBtn.onclick = () => stepDay(1);
