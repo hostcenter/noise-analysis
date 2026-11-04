@@ -780,7 +780,7 @@ def api_louddist(
 
 @app.get("/api/meta")
 def api_meta():
-    # sidebar footer: code version (date of the committed code, written by
+    # header meta: code version (date of the committed code, written by
     # the post-commit hook into version.txt) + date of the
     # last successful off-site backup (epoch marker written by the sync
     # service into the .rclone bind mount)
@@ -793,16 +793,28 @@ def api_meta():
 
     version = read_text(os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "version.txt"))
+    if version and " - " in version:
+        version = version.split(" - ")[0].strip()
+
     backup = None
+    backup_ts = None
     raw = read_text(os.environ.get("BACKUP_STATE", "/backup-state")
                     + "/last-backup")
     if raw:
         try:
-            backup = datetime.fromtimestamp(float(raw)).strftime(
-                "%d.%m.%Y - %H:%M")
+            backup_ts = float(raw)
+            diff_sec = max(0.0, time.time() - backup_ts)
+            hours = int(diff_sec // 3600)
+            if hours < 1:
+                backup = "< 1 hour ago"
+            elif hours == 1:
+                backup = "1 hour ago"
+            else:
+                backup = f"{hours} hours ago"
         except (ValueError, OSError, OverflowError):
             backup = None
-    return {"version": version, "backup": backup}
+            backup_ts = None
+    return {"version": version, "backup": backup, "backup_ts": backup_ts}
 
 
 @app.exception_handler(sqlite3.Error)

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nachtunruhe (browser friendly)</title>
+<title>Nachtunruhe</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -20,24 +20,23 @@
     display: flex; flex-direction: column; gap: 6px;
   }
   .header-top {
-    display: flex; align-items: center; width: 100%;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
   }
   .header-top h1 { font-size: 15px; font-weight: 600; margin: 0; }
   #nav {
     display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: 100%;
   }
   #meta-footer {
-    margin-left: auto; font-size: 11px; color: #57606a;
-    display: flex; align-items: center; gap: 12px;
+    font-size: 10px; color: #656d76;
   }
-  #meta-footer a { color: #57606a; text-decoration: none; }
+  #meta-footer a { color: #656d76; text-decoration: none; }
   #meta-footer a:hover { color: #0969da; text-decoration: underline; }
   .nav-item {
     display: inline-block; text-align: left;
     padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer;
-    background: transparent; color: #24292f; font-size: 14px;
+    background: #eaeef2; color: #24292f; font-size: 14px;
   }
-  .nav-item:hover { background: #eaeef2; }
+  .nav-item:hover { background: #d8dee4; }
   .nav-item.active { background: #2f6feb; color: #fff; }
 
   .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -97,10 +96,10 @@
 <body>
 <aside>
   <div class="header-top">
-    <h1>Nachtunruhe (browser friendly)</h1>
+    <h1>Nachtunruhe</h1>
     <div id="meta-footer">
-      <span id="meta-version">Version —</span>
-      <span id="meta-backup">Backup —</span>
+      <span id="meta-version">Code version —</span>,
+      <span id="meta-backup">data backup —</span>
     </div>
   </div>
   <nav id="nav">
@@ -108,7 +107,7 @@
     <button class="nav-item" data-view="heatmap">Noisemap</button>
     <button class="nav-item" data-view="threed">Noisescape</button>
     <button class="nav-item" data-view="live">Last 5 min</button>
-    <button class="nav-item" data-view="readme">Readme</button>
+    <button class="nav-item" data-view="readme">Description</button>
   </nav>
 </aside>
 

@@ -1170,10 +1170,21 @@ async function showView(name) {
 async function loadMeta() {
   try {
     const m = await get("/api/meta");
-    if (m.version)
-      document.getElementById("meta-version").textContent = "Version " + m.version;
-    if (m.backup)
-      document.getElementById("meta-backup").textContent = "Backup " + m.backup;
+    if (m.version) {
+      const ver = m.version.split(" - ")[0].trim();
+      document.getElementById("meta-version").textContent = "Code version " + ver;
+    }
+    if (m.backup_ts != null) {
+      const diffSec = Math.max(0, (Date.now() / 1000) - m.backup_ts);
+      const hours = Math.floor(diffSec / 3600);
+      const ago = hours < 1 ? "< 1 hour ago" : `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+      document.getElementById("meta-backup").textContent = "data backup " + ago;
+    } else if (m.backup) {
+      const text = m.backup.startsWith("data backup")
+        ? m.backup
+        : "data backup " + m.backup;
+      document.getElementById("meta-backup").textContent = text;
+    }
   } catch { /* footer keeps "—" placeholders */ }
 }
 
