@@ -72,6 +72,148 @@
     outline: none; border-color: #0969da;
     box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3);
   }
+
+  /* Disturbance & Sleep Continuity Cards */
+  .disturbance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .dist-card {
+    background: #ffffff;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .dist-card-header {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #57606a;
+  }
+  .dist-card-val {
+    font-size: 17px;
+    font-weight: 700;
+    color: #24292f;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 26px;
+  }
+  .dist-card-sub {
+    font-size: 11px;
+    color: #656d76;
+    line-height: 1.35;
+  }
+  .rest-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .rest-badge.restful { background: rgba(26,127,55,0.14); color: #1a7f37; }
+  .rest-badge.moderate { background: rgba(154,103,0,0.14); color: #9a6700; }
+  .rest-badge.disturbed { background: rgba(217,119,6,0.14); color: #b45309; }
+  .rest-badge.severely-disturbed { background: rgba(207,34,46,0.14); color: #cf222e; }
+
+  /* Top disturbers pill strip */
+  .disturbers-bar {
+    background: #ffffff;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .disturbers-label {
+    font-weight: 600;
+    color: #57606a;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .disturber-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 14px;
+    font-size: 11px;
+    color: #24292f;
+  }
+  .disturber-pill b { font-weight: 600; }
+  .disturber-pill .pill-max {
+    color: #cf222e;
+    font-weight: 600;
+  }
+
+  /* Night awakenings log */
+  .night-log-box {
+    background: #ffffff;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-top: 0;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .night-log-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #57606a;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+  }
+  .night-log-title b {
+    color: #cf222e;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .night-log-items {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .awakening-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    font-size: 11px;
+  }
+  .awakening-chip.high-impact {
+    background: #fff5f5;
+    border-color: #ffc1c0;
+  }
+  .chip-time { font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 600; color: #57606a; }
+  .chip-event { font-weight: 600; color: #24292f; }
+  .chip-spl { font-weight: 700; color: #cf222e; }
+  .chip-dur { color: #656d76; font-size: 10px; }
+
   /* 3D view: drop the content width cap and fill the viewport height */
   body.wide main { max-width: none; }
   #dist3d { height: calc(100vh - 100px); }
@@ -83,12 +225,29 @@
   #readme-box a { color: #0969da; text-decoration: underline; }
   #readme-box a:hover { color: #0550ae; }
   #readme-box h3 { margin: 20px 0 6px; font-size: 14px; color: #0969da; }
+  #readme-box h4 { margin: 14px 0 4px; font-size: 13px; color: #24292f; font-weight: 600; }
   #readme-box p, #readme-box li { color: #424a53; }
   #readme-box table { border-collapse: collapse; margin: 10px 0; width: 100%; }
   #readme-box th, #readme-box td {
     border: 1px solid #d0d7de; padding: 6px 10px; text-align: left; font-size: 13px;
   }
   #readme-box th { color: #57606a; }
+  #readme-box code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; background: #f6f8fa; padding: 2px 5px; border-radius: 4px;
+    border: 1px solid #d0d7de;
+  }
+  #readme-box pre {
+    background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px;
+    padding: 10px 14px; overflow-x: auto; margin: 10px 0;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.45; color: #24292f;
+  }
+  #readme-box pre code {
+    background: none; padding: 0; border: none; font-size: inherit;
+  }
+  #readme-box ul { margin: 8px 0 12px 20px; padding: 0; }
+  #readme-box li { margin-bottom: 4px; }
 
   .hint { color: #656d76; font-size: 12px; }
 </style>
@@ -107,14 +266,14 @@
     <button class="nav-item" data-view="heatmap">Noisemap</button>
     <button class="nav-item" data-view="threed">Noisescape</button>
     <button class="nav-item" data-view="live">Last 5 min</button>
-    <button class="nav-item" data-view="readme">Description</button>
+    <button class="nav-item" data-view="readme">Documentation</button>
   </nav>
 </aside>
 
 <div class="content">
   <main>
     <section id="view-day3w">
-      <div class="day-selector-bar" style="margin: 0 0 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+      <div class="day-selector-bar" style="margin: 0 0 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <button id="day3w-prev" class="day-btn" title="Previous day (older)">&#x25C0;</button>
         <select id="day3w-select"></select>
         <button id="day3w-next" class="day-btn" title="Next day (newer)">&#x25B6;</button>
@@ -124,6 +283,46 @@
           <option value="Vehicles">Vehicles</option>
         </select>
       </div>
+
+      <!-- Top Annoyance Drivers Bar -->
+      <div id="day-top-disturbers" class="disturbers-bar">
+        <span class="disturbers-label">Primary Annoyance Drivers:</span>
+        <span id="disturber-pills-wrap" style="display:inline-flex; flex-wrap:wrap; gap:6px;"></span>
+      </div>
+
+      <!-- Core Sleep Awakenings Log -->
+      <div id="day-night-log" class="night-log-box">
+        <span class="night-log-title">
+          <span>🌙</span>
+          <span><b id="night-log-count">0</b> Sleep Window Intrusions (00:00–07:00, ≥62 dB SPL):</span>
+        </span>
+        <div id="night-awakenings-wrap" class="night-log-items"></div>
+      </div>
+
+      <!-- Sleep & Disturbance Impact Cards -->
+      <div id="day-cards" class="disturbance-grid">
+        <div class="dist-card">
+          <div class="dist-card-header">Night Rest (00:00–07:00)</div>
+          <div class="dist-card-val"><span id="card-rest-badge" class="rest-badge restful">—</span></div>
+          <div id="card-rest-desc" class="dist-card-sub">—</div>
+        </div>
+        <div class="dist-card">
+          <div class="dist-card-header">Sleep Continuity (Max Quiet)</div>
+          <div class="dist-card-val" id="card-quiet-val">—</div>
+          <div id="card-quiet-sub" class="dist-card-sub">—</div>
+        </div>
+        <div class="dist-card">
+          <div class="dist-card-header">Night Wake-Up Intrusions (≥62 dB)</div>
+          <div class="dist-card-val" id="card-intrusions-val">—</div>
+          <div id="card-intrusions-sub" class="dist-card-sub">—</div>
+        </div>
+        <div class="dist-card">
+          <div class="dist-card-header">Worst Peak Disturbance</div>
+          <div class="dist-card-val" id="card-peak-val">—</div>
+          <div id="card-peak-sub" class="dist-card-sub">—</div>
+        </div>
+      </div>
+
       <div id="day3w-list">
         <div id="day3w-chart" class="chart"></div>
       </div>
@@ -168,27 +367,32 @@
 
         <h3>The views at a glance</h3>
         <table>
-          <tr><th>View</th><th>What you see</th><th>Question it answers</th></tr>
-          <tr><td><b>Daily</b></td><td>Spline chart for the
-              selected day and category (All noise types, Speech, Vehicles), hours
-              00–23 across. Three smooth curves show the hourly noise level (episodes &times; loudness) by
-              <b>peak level</b> — green = audible, yellow = loud, red = very loud.</td>
-              <td>"Which hours of that day were noisy — and how loud?"</td></tr>
-          <tr><td><b>Noisemap</b></td><td>One grid, all noise types
+          <tr><th>View</th><th>Axes</th><th>What you see</th><th>Question it answers</th></tr>
+          <tr><td><b>Daily</b></td>
+              <td><b>X:</b> Hour of day (00:00–24:00)<br><b>Left Y:</b> Hourly noise level (acoustic load)<br><b>Right Y:</b> Worst Peak SPL (Lmax dB)</td>
+              <td>Comprehensive daily disturbance profile: Night Rest Quality rating, sleep continuity (longest unbroken quiet window), night wake-up count (≥62&nbsp;dB), and primary annoyance drivers. The chart shows hourly acoustic load stacked by band (green = audible, yellow = loud, red = very loud) paired with a high-visibility <b>Worst Peak SPL line</b> that preserves sudden shocks. Below the chart is the sleep window awakenings log (00:00–07:00).</td>
+              <td>"How restful was the night, which sound sources caused disturbance, and what were the worst peaks?"</td></tr>
+          <tr><td><b>Noisemap</b></td>
+              <td><b>X:</b> Hour of day (00–23, top)<br><b>Y:</b> Calendar days (rows)</td>
+              <td>One grid, all noise types
               pooled: one row per day (all weeks), hours across. Each cell
               shows that hour's noise level (episode loudness above the noise
               floor) — raw, no averaging — brighter means more load. Night
               columns (22–06) are tinted light violet, day columns light
               green.</td>
               <td>"Which days and hours were the noisiest?"</td></tr>
-          <tr><td><b>Noisescape</b></td><td>A smooth 3D spline surface plot
+          <tr><td><b>Noisescape</b></td>
+              <td><b>X:</b> Hour (00–23)<br><b>Y:</b> Day (depth)<br><b>Z:</b> Noise level (height)</td>
+              <td>A smooth 3D spline surface plot
               starting at Oct 4th, where X is the hour of day (00–23), Y is
               the day, and Z is the hourly noise level (same calculation as
               Noisemap). Use the <b>Up and Down arrow keys</b> to fly along
               the surface toward more recent dates (Up) or back toward Oct 4th
               (Down) like an airstrip.</td>
               <td>"How does the hourly noise level evolve across days and hours?"</td></tr>
-          <tr><td><b>Last 5 min</b></td><td>A tall strip showing the last
+          <tr><td><b>Last 5 min</b></td>
+              <td><b>X:</b> Peak dB SPL (top, logarithmic)<br><b>Y:</b> Time (vertical, past 5 min)</td>
+              <td>A tall strip showing the last
               five minutes, newest on top. Black line = how loud the peaks
               are (dB scale across). Black pills = recognised sounds,
               sitting on the line at their loudness. The background is
@@ -196,6 +400,48 @@
               red = very loud.</td>
               <td>"What is happening right now?"</td></tr>
         </table>
+
+        <h3>Chart axes and navigation</h3>
+        <p>Each view is tailored to inspect noise patterns across different time scales and dimensions:</p>
+        <ul>
+          <li><b>Daily (Disturbance &amp; Sleep Profile):</b>
+            <ul>
+              <li><b>Disturbance &amp; Sleep Continuity Cards:</b> Evaluates night rest quality (Restful, Moderate, Disturbed, Severely Disturbed) based on awakenings count and quiet intervals in the core sleep window (00:00–07:00), displays longest continuous quiet period, and identifies the loudest night peak.</li>
+              <li><b>Primary Annoyance Drivers:</b> Ranks the top offensive sound sources using a psychoacoustic annoyance formula (night penalty multiplier &times; loudness contrast &times; duration).</li>
+              <li><b>Horizontal axis (X):</b> Time of day running from <code>00:00</code> to <code>24:00</code> in 1-hour increments. Night quiet periods (<code>00:00–07:00</code> and <code>22:00–24:00</code>) are shaded with a soft violet background band.</li>
+              <li><b>Left vertical axis (Y):</b> Cumulative hourly noise level (acoustic load = episodes &times; loudness above noise floor), stacked into three color bands:
+                <b>Audible</b> (&lt;62&nbsp;dB SPL, green),
+                <b>Loud</b> (62–67&nbsp;dB SPL, yellow), and
+                <b>Very loud</b> (&ge;67&nbsp;dB SPL, red).</li>
+              <li><b>Right vertical axis (Y):</b> Worst Peak sound level (<code>Lmax</code> in calibrated dB SPL) for each hour, ensuring sudden shocks and loud drive-bys are prominently visible even if total episode count was low.</li>
+              <li><b>Core Sleep Awakenings Log:</b> Lists the loudest intrusive events during the night window (00:00–07:00) with exact timestamp, recognized sound category, peak dB, and duration.</li>
+              <li><b>Interaction:</b> Use the left/right arrow buttons or the <b>Left (&larr;)</b> and <b>Right (&rarr;)</b> keyboard keys to step through individual days. Filter by noise family (All, Speech, Vehicles) via the dropdown.</li>
+            </ul>
+          </li>
+          <li><b>Noisemap (2D Heatmap):</b>
+            <ul>
+              <li><b>Horizontal axis (X, top):</b> Hours of the day from <code>00</code> to <code>23</code> across the top. Day hours (07:00–21:59) follow a green brightness gradient; night hours (22:00–06:59) follow a violet brightness gradient; the current in-progress hour cell is shown in greyscale.</li>
+              <li><b>Vertical axis (Y):</b> Calendar dates (e.g. <code>Mon 05.10.</code>), arranged chronologically with newest days at the top.</li>
+              <li><b>Cell color:</b> Represents the raw hourly acoustic load (sum of episode loudness above the ambient noise floor) — brighter cells indicate higher noise load. Hovering over any cell displays the exact date, time window, and noise level.</li>
+            </ul>
+          </li>
+          <li><b>Noisescape (3D Surface):</b>
+            <ul>
+              <li><b>X axis (width):</b> Hour of day (<code>00:00</code> to <code>23:00</code>, with tick marks every 3 hours).</li>
+              <li><b>Y axis (depth / airstrip):</b> Calendar days starting from October 4th, extending into the background.</li>
+              <li><b>Z axis (vertical height):</b> Hourly noise level (acoustic load) rendered as a continuous bicubic Catmull-Rom spline surface.</li>
+              <li><b>Color scale:</b> Chromatic gradient mapped to noise level: green (low/quiet) &rarr; yellow (medium) &rarr; red and dark red (high noise level).</li>
+              <li><b>Interaction:</b> Press the <b>Up (&uarr;)</b> and <b>Down (&darr;)</b> arrow keys to glide forward toward recent days or backward toward October 4th like an airstrip runway. Click and drag to orbit / tilt; scroll to zoom.</li>
+            </ul>
+          </li>
+          <li><b>Last 5 min (Live strip):</b>
+            <ul>
+              <li><b>Horizontal axis (X, top):</b> Peak loudness in calibrated dB SPL on a logarithmic display scale (<code>log(dB + 56)</code>), with tick marks at <code>45</code>, <code>50</code>, <code>55</code>, <code>60</code>, <code>65</code>, and <code>70</code> dB SPL. Tinted background columns mark the green (&le;62&nbsp;dB), yellow (62–67&nbsp;dB), and red (&ge;67&nbsp;dB) ranges.</li>
+              <li><b>Vertical axis (Y):</b> Continuous scrolling time over the past 5 minutes (300 seconds), with the oldest reading at the bottom and incoming real-time measurements arriving at the top.</li>
+              <li><b>Trace &amp; badges:</b> The solid black curve tracks peak decibel levels over time. Identified sound categories appear as black badges ("pills") pinned at their exact time and loudness.</li>
+            </ul>
+          </li>
+        </ul>
 
         <h3>How loud is "loud"? (the dB numbers)</h3>
         <p>The microphone is <b>calibrated against a reference SPL meter</b>,
@@ -223,6 +469,42 @@
         birds, dogs and cats), and <b>Other</b> (sirens, trains, aircraft,
         music, doors). Most views pool all families into one picture.</p>
 
+        <h3>Logfile format</h3>
+        <p>The system stores all measurement data in <code>logs/</code> using the JSON Lines
+        (<code>.jsonl</code>) format — plain text where each line is a self-contained, valid JSON object.
+        This makes logs streamable, easy to parse with standard Unix tools (<code>grep</code>, <code>jq</code>),
+        and resilient against crashes. In accordance with strict privacy principles, raw audio is never written to disk.</p>
+
+        <p>Two complementary logfiles are recorded:</p>
+
+        <h4>1. <code>events.jsonl</code> (Acoustic episodes)</h4>
+        <p>Emitted at the end of each acoustic episode (after 2&nbsp;seconds of quiet, capped at 120&nbsp;seconds maximum).
+        Episodes are subject to a 10-second refractory window to prevent double-counting continuous noises.</p>
+        <pre><code>{"ts":"2026-11-04T20:45:10.920Z","event":"Speech","confidence":0.969,"spl_db":-42.2,"spl_db_max":-38.9,"duration_s":19.5}</code></pre>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+          <tr><td><code>ts</code></td><td>string</td><td>ISO&nbsp;8601 UTC timestamp of episode onset (millisecond precision).</td></tr>
+          <tr><td><code>event</code></td><td>string</td><td>Identified sound category name from the AudioSet ontology (e.g. <code>Speech</code>, <code>Car</code>, <code>Motorcycle</code>, <code>Siren</code>).</td></tr>
+          <tr><td><code>confidence</code></td><td>number</td><td>YAMNet classifier probability (0.000 to 1.000) at the episode's clearest/loudest frame.</td></tr>
+          <tr><td><code>spl_db</code></td><td>number</td><td>A-weighted decibels at the moment of peak classifier confidence.</td></tr>
+          <tr><td><code>spl_db_max</code></td><td>number</td><td>Peak A-weighted decibel level observed across the entire episode.</td></tr>
+          <tr><td><code>duration_s</code></td><td>number</td><td>Duration of the episode in seconds, from onset until the quiet threshold.</td></tr>
+        </table>
+
+        <h4>2. <code>spl.jsonl</code> (1-second sound pressure levels)</h4>
+        <p>Emitted continuously every second to track the ambient sound floor and broad frequency spectrum.</p>
+        <pre><code>{"ts":"2026-11-04T20:47:08.649Z","spl_db":-50.9,"spl_db_min":-51.1,"spl_db_max":-50.7,"bands":{"low":-64.4,"mid":-54.0,"high":-54.7}}</code></pre>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+          <tr><td><code>ts</code></td><td>string</td><td>ISO&nbsp;8601 UTC timestamp of the 1-second aggregation interval.</td></tr>
+          <tr><td><code>spl_db</code></td><td>number</td><td>Mean A-weighted sound pressure level over the 1-second interval.</td></tr>
+          <tr><td><code>spl_db_min</code></td><td>number</td><td>Minimum instantaneous sound level recorded within the second.</td></tr>
+          <tr><td><code>spl_db_max</code></td><td>number</td><td>Maximum instantaneous peak sound level recorded within the second.</td></tr>
+          <tr><td><code>bands.low</code></td><td>number</td><td>Low-frequency band energy in dB (63&nbsp;Hz&nbsp;–&nbsp;250&nbsp;Hz; engine rumble, bass).</td></tr>
+          <tr><td><code>bands.mid</code></td><td>number</td><td>Mid-frequency band energy in dB (250&nbsp;Hz&nbsp;–&nbsp;1,000&nbsp;Hz; human speech, tire roll).</td></tr>
+          <tr><td><code>bands.high</code></td><td>number</td><td>High-frequency band energy in dB (1,000&nbsp;Hz&nbsp;–&nbsp;8,000&nbsp;Hz; brake squeal, tire hiss, birds).</td></tr>
+        </table>
+
         <h3>Privacy</h3>
         <p>No audio is ever recorded, stored, or transmitted. No internet
         connection is needed — everything runs inside the apartment on the
@@ -243,6 +525,6 @@
 
 <script src="/vendor/echarts.min.js"></script>
 <script src="/vendor/echarts-gl.min.js"></script>
-<script src="/app.js?v=301"></script>
+<script src="/app.js?v=305"></script>
 </body>
 </html>

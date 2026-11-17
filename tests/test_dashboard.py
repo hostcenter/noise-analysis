@@ -11,7 +11,9 @@ if "fastapi" not in sys.modules:
     try:
         import fastapi
     except ImportError:
-        sys.modules["fastapi"] = MagicMock()
+        mock_fastapi = MagicMock()
+        mock_fastapi.FastAPI.return_value.get.return_value = lambda f: f
+        sys.modules["fastapi"] = mock_fastapi
         sys.modules["fastapi.responses"] = MagicMock()
         sys.modules["fastapi.staticfiles"] = MagicMock()
         sys.modules["uvicorn"] = MagicMock()
@@ -165,6 +167,61 @@ class TestDashboardIngestion(unittest.TestCase):
                 "SELECT event, confidence, spl, duration, spl_peak FROM events"
             ).fetchone()
             self.assertEqual(row, ("Car", 0.85, -42.0, 4.2, -38.5))
+
+
+class TestDayStats(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.orig_log_dir = dashboard.LOG_DIR
+        self.orig_db_path = dashboard.DB_PATH
+        dashboard.LOG_DIR = self.tmp_dir.name
+        dashboard.DB_PATH = os.path.join(self.tmp_dir.name, "dashboard.db")
+        self.con = dashboard.connect()
+        self.con.executescript(dashboard.SCHEMA)
+
+    def tearDown(self):
+        self.con.close()
+        dashboard.LOG_DIR = self.orig_log_dir
+        dashboard.DB_PATH = self.orig_db_path
+        self.tmp_dir.cleanup()
+
+    def test_daystats_calculation(self):
+        # 2026-11-15 00:00:00 UTC / local
+        day = "2026-11-15"
+        row = self.con.execute(
+            "SELECT CAST(strftime('%s', ?, 'localtime', 'start of day', 'utc') AS INTEGER)",
+            (day,),
+        ).fetchone()
+        t0 = float(row[0])
+
+        events = [
+            # Night event 1: 01:00, Speech, -40 dBFS (66.6 dB SPL - Loud), 10s
+            (t0 + 3600, "Speech", 0.9, -40.0, 10.0, -40.0),
+            # Night event 2: 03:00, Motorcycle, -30 dBFS (76.6 dB SPL - Very Loud), 5s
+            (t0 + 3 * 3600, "Motorcycle", 0.95, -30.0, 5.0, -30.0),
+            # Day event 3: 12:00, Car, -35 dBFS (71.6 dB SPL), 8s
+            (t0 + 12 * 3600, "Car", 0.8, -35.0, 8.0, -35.0),
+        ]
+        self.con.executemany("INSERT INTO events VALUES (?,?,?,?,?,?)", events)
+        self.con.commit()
+
+        res = dashboard.api_daystats(day=day)
+        self.assertEqual(res["day"], day)
+        self.assertIn("rating", res)
+        self.assertIn("night", res)
+        self.assertEqual(res["night"]["intrusions"], 2)
+        self.assertEqual(res["night"]["very_loud"], 1)
+        self.assertIsNotNone(res["night"]["loudest"])
+        self.assertEqual(res["night"]["loudest"]["event"], "Motorcycle")
+        self.assertEqual(res["night"]["loudest"]["spl_db"], 76.6)
+        self.assertEqual(len(res["hourly_peaks"]), 24)
+        self.assertEqual(res["hourly_peaks"][3]["peak_spl"], 76.6)
+        self.assertEqual(res["hourly_peaks"][3]["loudest_event"], "Motorcycle")
+
+        # Test filtering by event
+        res_speech = dashboard.api_daystats(day=day, event="Speech")
+        self.assertEqual(res_speech["day_summary"]["total_episodes"], 1)
+        self.assertEqual(res_speech["top_offenders"][0]["event"], "Speech")
 
 
 if __name__ == "__main__":

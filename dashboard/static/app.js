@@ -778,8 +778,8 @@ function stepDay(delta) {
   }
 }
 
-// spline chart for a single selected day, 3 loudness bands
-function renderDaySpline(ds) {
+// spline chart for a single selected day, 3 loudness bands + worst peak Lmax overlay
+async function renderDaySpline(ds) {
   if (!ds) return;
 
   const now = new Date();
@@ -790,6 +790,109 @@ function renderDaySpline(ds) {
   const label = formatDaySelector(ds);
   const filter = state.selectedFilter3w || "All";
   const filterSuffix = filter !== "All" ? ` \u00B7 ${filter}` : "";
+
+  // Fetch day disturbance, sleep continuity, and top annoyance drivers
+  const members = filter === "All" ? "" : (state.groupMembers[filter] || []).join(";");
+  let dayStats = null;
+  try {
+    dayStats = await get("/api/daystats", { day: ds, event: members });
+  } catch (err) {
+    console.error("Failed to load /api/daystats:", err);
+  }
+
+  // Update sleep & disturbance impact cards
+  if (dayStats && dayStats.night) {
+    const badgeEl = document.getElementById("card-rest-badge");
+    const descEl = document.getElementById("card-rest-desc");
+    if (badgeEl) {
+      badgeEl.textContent = dayStats.rating;
+      badgeEl.className = `rest-badge ${dayStats.rating.toLowerCase().replace(/\s+/g, "-")}`;
+    }
+    if (descEl) descEl.textContent = dayStats.rating_desc;
+
+    const quietValEl = document.getElementById("card-quiet-val");
+    const quietSubEl = document.getElementById("card-quiet-sub");
+    if (quietValEl) {
+      quietValEl.textContent = `${dayStats.night.longest_quiet_min} min`;
+    }
+    if (quietSubEl) {
+      quietSubEl.textContent = `Unbroken quiet (${dayStats.night.quiet_start}\u2013${dayStats.night.quiet_end}); target \u226590m`;
+    }
+
+    const intValEl = document.getElementById("card-intrusions-val");
+    const intSubEl = document.getElementById("card-intrusions-sub");
+    if (intValEl) {
+      intValEl.textContent = `${dayStats.night.intrusions} ${dayStats.night.intrusions === 1 ? "event" : "events"}`;
+    }
+    if (intSubEl) {
+      intSubEl.textContent = `${dayStats.night.very_loud} very loud (\u226567 dB)`;
+    }
+
+    const peakValEl = document.getElementById("card-peak-val");
+    const peakSubEl = document.getElementById("card-peak-sub");
+    if (peakValEl) {
+      peakValEl.textContent = dayStats.night.loudest ? `${dayStats.night.loudest.spl_db} dB SPL` : "\u2014";
+    }
+    if (peakSubEl) {
+      const nl = dayStats.night.loudest;
+      if (nl) {
+        const durStr = nl.duration_s > 0 ? ` (${nl.duration_s}s)` : "";
+        peakSubEl.textContent = `${nl.event} at ${nl.time}${durStr}`;
+      } else {
+        peakSubEl.textContent = "No loud night events";
+      }
+    }
+
+    // Top annoyance disturbers
+    const pillsWrap = document.getElementById("disturber-pills-wrap");
+    if (pillsWrap) {
+      pillsWrap.innerHTML = "";
+      if (dayStats.top_offenders && dayStats.top_offenders.length) {
+        const icons = {
+          Vehicle: "\u{1F697}", Car: "\u{1F697}", Motorcycle: "\u{1F3CD}\uFE0F", Bus: "\u{1F68C}", Truck: "\u{1F69B}",
+          Speech: "\u{1F5E3}\uFE0F", Shout: "\u{1F5E3}\uFE0F", Yell: "\u{1F5E3}\uFE0F", Screaming: "\u{1F6A8}",
+          Music: "\u{1F3B5}", Siren: "\u{1F6A8}", "Ambulance (siren)": "\u{1F691}",
+          Dog: "\u{1F415}", "Wild animals": "\u{1F43E}", Bird: "\u{1F426}",
+          Rain: "\u{1F327}\uFE0F", Raindrop: "\u{1F4A7}", "Rain on surface": "\u{1F327}\uFE0F", Drip: "\u{1F4A7}",
+          "Slamming shut": "\u{1F6AA}", Chop: "\u{1F6AA}",
+          "Leaf blower / Power tool": "\u{1F342}"
+        };
+        dayStats.top_offenders.forEach(o => {
+          const ico = icons[o.event] || "\u{1F50A}";
+          const pill = document.createElement("span");
+          pill.className = "disturber-pill";
+          pill.innerHTML = `${ico} <b>${o.event}</b>: ${o.count} (${o.night_count} night) \u00B7 <span class="pill-max">${o.max_spl} dB</span>`;
+          pillsWrap.appendChild(pill);
+        });
+      } else {
+        pillsWrap.innerHTML = '<span class="hint">No episodes recorded for this filter.</span>';
+      }
+    }
+
+    // Core sleep awakenings log
+    const awakeningsWrap = document.getElementById("night-awakenings-wrap");
+    const countEl = document.getElementById("night-log-count");
+    const nIntrusions = (dayStats.night && dayStats.night.intrusions) || 0;
+    if (countEl) {
+      countEl.textContent = nIntrusions;
+      countEl.style.color = nIntrusions > 0 ? "#cf222e" : "#1a7f37";
+    }
+    if (awakeningsWrap) {
+      awakeningsWrap.innerHTML = "";
+      if (dayStats.night.awakenings && dayStats.night.awakenings.length) {
+        dayStats.night.awakenings.forEach(a => {
+          const isHigh = a.spl_db >= 67;
+          const durHtml = a.duration_s > 0 ? ` <span class="chip-dur">(${a.duration_s}s)</span>` : "";
+          const chip = document.createElement("div");
+          chip.className = `awakening-chip ${isHigh ? "high-impact" : ""}`;
+          chip.innerHTML = `<span class="chip-time">${a.time}</span> <span class="chip-event">${a.event}</span> <span class="chip-spl">${a.spl_db} dB</span>${durHtml}`;
+          awakeningsWrap.appendChild(chip);
+        });
+      } else {
+        awakeningsWrap.innerHTML = '<span class="hint" style="color:#1a7f37; font-weight:500;">\u2713 No loud intrusions (\u226562 dB) recorded.</span>';
+      }
+    }
+  }
 
   const [y, m, dd] = ds.split("-");
   const prevD = new Date(Date.UTC(+y, +m - 1, +dd - 1));
@@ -825,6 +928,35 @@ function renderDaySpline(ds) {
     }
   }
 
+  // Peak SPL series points for each hour of the day
+  const peakLookup = new Map();
+  if (dayStats && dayStats.hourly_peaks) {
+    dayStats.hourly_peaks.forEach(item => {
+      peakLookup.set(item.hour, item);
+    });
+  }
+
+  const peakSeriesData = [];
+  for (let hTick = 0; hTick <= 24; hTick++) {
+    const t = t0 + hTick * 3600 * 1000;
+    const hData = hTick - 1;
+    if (hTick === 0) {
+      peakSeriesData.push([t, null, null]);
+      continue;
+    }
+    const isFuture = ds > today || (ds === today && hData >= nowH);
+    if (isFuture) {
+      peakSeriesData.push([t, null, null]);
+    } else {
+      const item = peakLookup.get(hData);
+      if (item && item.peak_spl != null) {
+        peakSeriesData.push([t, item.peak_spl, item.loudest_event]);
+      } else {
+        peakSeriesData.push([t, null, null]);
+      }
+    }
+  }
+
   // Fixed on the global maximum of this view across all dates and categories
   const maxY = day3wGlobalMax || 230;
 
@@ -832,7 +964,7 @@ function renderDaySpline(ds) {
   chart.setOption({
     animation: false,
     useUTC: true,
-    grid: { left: 56, right: 16, top: 18, bottom: 24 },
+    grid: { left: 56, right: 60, top: 22, bottom: 24 },
     tooltip: {
       trigger: "axis",
       formatter: params => {
@@ -851,20 +983,31 @@ function renderDaySpline(ds) {
         }
         let sumLoad = 0;
         let sumCount = 0;
+        let peakInfo = "";
         const lines = params
           .filter(p => p.value && p.value[1] != null)
           .map(p => {
+            if (p.seriesName === "Worst Peak (Lmax)") {
+              const pk = Number(p.value[1]).toFixed(1);
+              const ev = p.value[2] ? ` (${p.value[2]})` : "";
+              peakInfo = `<span style="color:#cf222e; font-weight:600;">\u25C6 Worst Peak: ${pk} dB SPL${ev}</span>`;
+              return null;
+            }
             const v = Number(p.value[1]) || 0;
             const cnt = Number(p.value[2]) || 0;
             sumLoad += v;
             sumCount += cnt;
             const epStr = `${cnt} ${cnt === 1 ? "episode" : "episodes"}`;
             return `${p.marker}${p.seriesName}: <b>${v.toFixed(1)}</b> (${epStr})`;
-          });
-        if (!lines.length) return `${dateStr}${filterSuffix}, ${rangeStr}`;
+          })
+          .filter(Boolean);
+
+        if (!lines.length && !peakInfo) return `${dateStr}${filterSuffix}, ${rangeStr}`;
         const totalLoadStr = (Math.round(sumLoad * 10) / 10).toFixed(1);
         const totalEpStr = `${sumCount} ${sumCount === 1 ? "episode" : "episodes"}`;
-        return `${dateStr}${filterSuffix}, ${rangeStr} (noise level <b>${totalLoadStr}</b> \u00B7 <b>${totalEpStr}</b>)<br>` + lines.join("<br>");
+        let res = `${dateStr}${filterSuffix}, ${rangeStr} (load <b>${totalLoadStr}</b> \u00B7 <b>${totalEpStr}</b>)<br>`;
+        if (peakInfo) res += peakInfo + "<br>";
+        return res + lines.join("<br>");
       },
     },
     xAxis: {
@@ -889,13 +1032,29 @@ function renderDaySpline(ds) {
       },
       splitLine: { show: true, lineStyle: { color: "#eaeef2" } },
     },
-    yAxis: {
-      type: "value",
-      min: 0,
-      max: maxY,
-      axisLabel: { color: "#57606a", fontSize: 11 },
-      splitLine: { lineStyle: { color: "#eaeef2" } },
-    },
+    yAxis: [
+      {
+        type: "value",
+        min: 0,
+        max: maxY,
+        axisLabel: { color: "#57606a", fontSize: 11 },
+        splitLine: { lineStyle: { color: "#eaeef2" } },
+      },
+      {
+        type: "value",
+        min: 40,
+        max: 90,
+        interval: 10,
+        name: "Peak SPL",
+        nameTextStyle: { color: "#57606a", fontSize: 11 },
+        axisLabel: {
+          color: "#57606a",
+          fontSize: 11,
+          formatter: "{value} dB",
+        },
+        splitLine: { show: false },
+      },
+    ],
     series: [
       {
         name: "Audible (<62 dB)",
@@ -943,6 +1102,28 @@ function renderDaySpline(ds) {
         itemStyle: { color: "#cf222e" },
         lineStyle: { width: 2, color: "#cf222e" },
         areaStyle: { color: "rgba(207,34,46,0.35)" },
+      },
+      {
+        name: "Worst Peak (Lmax)",
+        type: "line",
+        yAxisIndex: 1,
+        showSymbol: true,
+        symbol: "circle",
+        symbolSize: (val) => (val && val[1] >= 67 ? 8 : 5),
+        itemStyle: {
+          color: (p) => {
+            const val = p.value ? p.value[1] : 0;
+            if (val >= 67) return "#cf222e";
+            if (val >= 62) return "#f59f00";
+            return "#57606a";
+          },
+        },
+        lineStyle: {
+          width: 2,
+          type: "dotted",
+          color: "#8c959f",
+        },
+        data: peakSeriesData,
       },
     ],
   }, true);

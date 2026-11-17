@@ -165,14 +165,13 @@ recording machine (two writers would fight over the same R2 objects).
 ## Off-site backup (R2)
 
 The `sync` service (runs only in the `full` profile) pushes `logs/` to a
-private Cloudflare R2 bucket — S3-compatible, zero egress, 10 GB free
-tier (more than enough
-at ~15 MB/day; revisit when `spl.jsonl` approaches it — rotate daily and
-upload segments once, the dashboard survives logrotate).
+private Cloudflare R2 bucket — S3-compatible, zero egress, 10 GB free tier.
+SPL measurements are partitioned daily into `spl-YYYY-MM-DD.jsonl` (~8–11 MB per day).
+Once a day is complete, its file is immutable and uploaded once to R2.
 
-- Schedule: `events.jsonl` + `spl.jsonl` are pushed once per hour; a
+- Schedule: `events.jsonl` + active `spl-YYYY-MM-DD.jsonl` (today and yesterday) are pushed once per hour (~20 MB total upload per cycle); a
   failed push is simply retried next hour.
-- Each cycle snapshots files to container tmpfs first, so S3 PUTs are
+- Each cycle snapshots active files to container tmpfs first, so S3 PUTs are
   atomic (bucket never holds a partial file) and nothing touches the SD
   card; local logs are opened read-only and never modified.
 - `dashboard.db*` is never uploaded (derived, changes constantly).

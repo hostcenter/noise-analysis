@@ -72,9 +72,27 @@ def append_json(name, obj):
         f.write(json.dumps(obj, separators=(",", ":")) + "\n")
 
 
+# Automatic remapping for outdoor microphone false positives (e.g. raindrops on window sill)
+EVENT_REMAP = {
+    "Computer keyboard": "Rain",
+    "Raindrop": "Rain",
+    "Rain on surface": "Rain",
+    "Fire": "Rain",
+    "Chop": "Slamming shut",
+    "Electric shaver, electric razor": "Leaf blower / Power tool",
+    "Vacuum cleaner": "Leaf blower / Power tool",
+    "Hair dryer": "Leaf blower / Power tool",
+    "Toothbrush": "Leaf blower / Power tool",
+    "Tools": "Leaf blower / Power tool",
+}
+
+
 def load_class_names(path):
     with open(path, newline="") as f:
-        return [row["display_name"] for row in csv.DictReader(f)]
+        return [
+            EVENT_REMAP.get(row["display_name"], row["display_name"])
+            for row in csv.DictReader(f)
+        ]
 
 
 class Yamnet:
@@ -190,13 +208,14 @@ def file_frames(path):
 
 def _emit_episode(start_ts, best, peak, last_loud, class_names):
     bi, bconf, bspl = best
+    raw_ev = class_names[int(bi)]
     append_json(
         "events.jsonl",
         {
             "ts": datetime.fromtimestamp(start_ts, timezone.utc)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z"),
-            "event": class_names[int(bi)],
+            "event": EVENT_REMAP.get(raw_ev, raw_ev),
             "confidence": round(bconf, 3),
             "spl_db": bspl,
             "spl_db_max": round(peak, 1),
@@ -221,10 +240,12 @@ def run_loop(frames, yam, hann, freqs, a_weight, class_names):
         spl_vals.append(dba)
         now = time.time()
         if SOURCE == "file" or now - last_spl >= SPL_INTERVAL:
+            ts_str = iso_now()
+            today_str = ts_str[:10]
             append_json(
-                "spl.jsonl",
+                f"spl-{today_str}.jsonl",
                 {
-                    "ts": iso_now(),
+                    "ts": ts_str,
                     "spl_db": round(sum(spl_vals) / len(spl_vals), 1),
                     "spl_db_min": round(min(spl_vals), 1),
                     "spl_db_max": round(max(spl_vals), 1),

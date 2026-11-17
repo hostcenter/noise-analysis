@@ -25,6 +25,7 @@ services:
       SPL_INTERVAL: ${SPL_INTERVAL:-1}
     volumes:
       - ./logs:/data/logs
+      - ./analysis/analyze.py:/app/analyze.py:ro
 
   dashboard:
     build:
@@ -63,7 +64,10 @@ services:
     entrypoint: >
       sh -c 'while true; do
         rm -rf /tmp/push && mkdir -p /tmp/push;
-        cp /data/logs/events.jsonl /data/logs/spl.jsonl /tmp/push/ 2>/dev/null;
+        today=$$(date -u +%Y-%m-%d);
+        yesterday=$$(date -u -d "@$$(( $$(date +%s) - 86400 ))" +%Y-%m-%d);
+        cp /data/logs/events.jsonl /tmp/push/ 2>/dev/null;
+        cp /data/logs/spl-$${today}.jsonl /data/logs/spl-$${yesterday}.jsonl /tmp/push/ 2>/dev/null;
         rclone copy /tmp/push r2:noise-logs && date +%s > /config/rclone/last-backup;
         rm -rf /tmp/push/*;
         sleep 3600;

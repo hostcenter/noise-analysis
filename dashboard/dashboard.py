@@ -29,8 +29,26 @@ INGEST_INTERVAL = float(os.environ.get("INGEST_INTERVAL", "2"))
 EVENT_BLOCKLIST = {
     s.strip() for s in os.environ.get("EVENT_BLOCKLIST", "").split(";") if s.strip()
 }
+EVENT_REMAP = {
+    "Computer keyboard": "Rain",
+    "Raindrop": "Rain",
+    "Rain on surface": "Rain",
+    "Fire": "Rain",
+    "Chop": "Slamming shut",
+    "Electric shaver, electric razor": "Leaf blower / Power tool",
+    "Vacuum cleaner": "Leaf blower / Power tool",
+    "Hair dryer": "Leaf blower / Power tool",
+    "Toothbrush": "Leaf blower / Power tool",
+    "Tools": "Leaf blower / Power tool",
+}
 PORT = int(os.environ.get("PORT", "8080"))
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+# loudness band edges (dB SPL): green audible <= 62, yellow loud 62-67, red very loud >= 67
+DB_OFFSET = 106.6                              # calibration (dB SPL - dBFS)
+BAND_LOUD = round(62 - DB_OFFSET, 1)           # ~ -44.6 dBFS
+BAND_VERY = round(67 - DB_OFFSET, 1)           # ~ -39.6 dBFS
+WEEKDAY_THRESHOLDS = [BAND_LOUD, BAND_VERY]
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -162,15 +180,17 @@ def event_row(e):
             con.close()
         _last_episode["init"] = True
     ts = parse_ts(e.get("ts"))
-    if ts is None or not e.get("event"):
+    raw_ev = e.get("event")
+    ev = EVENT_REMAP.get(raw_ev, raw_ev)
+    if ts is None or not ev:
         return None
-    if e["event"] in EVENT_BLOCKLIST:
+    if ev in EVENT_BLOCKLIST:
         return None
     if ts - _last_episode["ts"] < EPISODE_REFRACTORY:
         return None  # belongs to the previous episode
     _last_episode["ts"] = ts
     dur = e.get("duration_s")
-    return (ts, e["event"], e.get("confidence"), e.get("spl_db"),
+    return (ts, ev, e.get("confidence"), e.get("spl_db"),
             float(dur) if dur is not None else None, e.get("spl_db_max"))
 
 
@@ -187,12 +207,18 @@ def ingester(stop):
     backfill_peaks(con)
     while not stop.is_set():
         try:
-            n1 = tail_file(
-                con,
-                "spl.jsonl",
-                "INSERT OR IGNORE INTO spl VALUES (?,?,?,?,?,?,?)",
-                spl_row,
+            # Ingest any daily SPL partition files (spl-YYYY-MM-DD.jsonl) and legacy spl.jsonl
+            spl_candidates = sorted(
+                f for f in os.listdir(LOG_DIR)
+                if f.startswith("spl") and f.endswith(".jsonl") and not f.endswith(".tmp")
             )
+            for sf in spl_candidates:
+                tail_file(
+                    con,
+                    sf,
+                    "INSERT OR IGNORE INTO spl VALUES (?,?,?,?,?,?,?)",
+                    spl_row,
+                )
             n2 = tail_file(
                 con,
                 "events.jsonl",
@@ -498,6 +524,195 @@ def api_hourly(
     }
 
 
+@app.get("/api/daystats")
+def api_daystats(
+    day: str = Query(...),
+    event: str = Query(default=""),
+):
+    """Computes daily psychoacoustic disturbance, sleep continuity, and top annoyance drivers."""
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+        return JSONResponse({"error": "invalid day format, expected YYYY-MM-DD"}, status_code=400)
+
+    row = q(
+        """
+        SELECT CAST(strftime('%s', :d, 'localtime', 'start of day', 'utc') AS INTEGER),
+               CAST(strftime('%s', :d, 'localtime', 'start of day', '+1 day', 'utc') AS INTEGER)
+        """,
+        {"d": day},
+    )
+    if not row or row[0][0] is None:
+        return JSONResponse({"error": "invalid day"}, status_code=400)
+
+    day_start, day_end = row[0][0], row[0][1]
+    night_end = day_start + 7 * 3600  # 07:00 local time
+
+    conds = ["ts >= :day_start", "ts < :day_end"]
+    params = {
+        "day_start": day_start,
+        "day_end": day_end,
+        "b1": BAND_LOUD,
+        "b2": BAND_VERY,
+        "offset": DB_OFFSET,
+    }
+    if event:
+        classes = [c.strip() for c in event.split(";") if c.strip()]
+        if classes:
+            ph = [f":c{i}" for i in range(len(classes))]
+            conds.append(f"event IN ({','.join(ph)})")
+            params.update({f"c{i}": c for i, c in enumerate(classes)})
+
+    where_sql = " WHERE " + " AND ".join(conds)
+
+    events = q(
+        """
+        SELECT ts, event, COALESCE(spl_peak, spl) as peak, duration,
+               CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) as h,
+               strftime('%H:%M', ts, 'unixepoch', 'localtime') as hm
+        FROM events
+        """
+        + where_sql
+        + " ORDER BY ts",
+        params,
+    )
+
+    # Core sleep window is 00:00 to 07:00 on the selected day
+    night_events = [e for e in events if e[4] < 7]
+    loud_night = [e for e in night_events if (e[2] or -999) >= BAND_LOUD]
+    very_loud_night = [e for e in night_events if (e[2] or -999) >= BAND_VERY]
+
+    # Calculate unbroken quiet stretch during 00:00-07:00 (gaps between loud_night events)
+    ts_seq = [(day_start, "00:00")] + [(e[0], e[5]) for e in loud_night] + [(night_end, "07:00")]
+    max_gap = 0
+    quiet_start_str, quiet_end_str = "00:00", "07:00"
+    for i in range(len(ts_seq) - 1):
+        gap = ts_seq[i + 1][0] - ts_seq[i][0]
+        if gap > max_gap:
+            max_gap = gap
+            quiet_start_str, quiet_end_str = ts_seq[i][1], ts_seq[i + 1][1]
+
+    # Sleep rest rating
+    if len(loud_night) <= 5 and max_gap >= 2.5 * 3600:
+        rating = "Restful"
+        rating_color = "#1a7f37"
+        rating_desc = "Continuous unbroken quiet; minimal sleep disruption"
+    elif len(loud_night) <= 18 and max_gap >= 1.5 * 3600:
+        rating = "Moderate"
+        rating_color = "#9a6700"
+        rating_desc = "Occasional loud noise events; moderate sleep fragmentation"
+    elif len(loud_night) <= 45 or max_gap >= 45 * 60:
+        rating = "Disturbed"
+        rating_color = "#d97706"
+        rating_desc = "Fragmented sleep; quiet periods under 90 minutes"
+    else:
+        rating = "Severely Disturbed"
+        rating_color = "#cf222e"
+        rating_desc = "Frequent loud awakenings; sleep continuity severely broken"
+
+    # Loudest events
+    loudest_night = None
+    if night_events:
+        ln = max(night_events, key=lambda e: e[2] or -999)
+        loudest_night = {
+            "event": ln[1],
+            "spl_db": round(ln[2] + DB_OFFSET, 1),
+            "time": ln[5],
+            "duration_s": round(ln[3] or 0.0, 1),
+        }
+
+    loudest_day = None
+    if events:
+        ld = max(events, key=lambda e: e[2] or -999)
+        loudest_day = {
+            "event": ld[1],
+            "spl_db": round(ld[2] + DB_OFFSET, 1),
+            "time": ld[5],
+            "duration_s": round(ld[3] or 0.0, 1),
+        }
+
+    # Top awakenings during night (00:00 to 07:00), sorted by peak SPL
+    awakenings = []
+    for e in sorted(loud_night, key=lambda x: x[2] or -999, reverse=True)[:8]:
+        awakenings.append({
+            "time": e[5],
+            "event": e[1],
+            "spl_db": round(e[2] + DB_OFFSET, 1),
+            "duration_s": round(e[3] or 0.0, 1),
+        })
+
+    # Hourly peaks for chart overlay
+    hourly_map = {}
+    for e in events:
+        h = e[4]
+        pk = e[2] + DB_OFFSET if e[2] is not None else 0.0
+        if h not in hourly_map or pk > hourly_map[h]["peak_spl"]:
+            hourly_map[h] = {
+                "peak_spl": round(pk, 1),
+                "loudest_event": e[1],
+            }
+
+    hourly_peaks = []
+    for h in range(24):
+        item = hourly_map.get(h, {"peak_spl": None, "loudest_event": None})
+        hourly_peaks.append({
+            "hour": h,
+            "peak_spl": item["peak_spl"],
+            "loudest_event": item["loudest_event"],
+        })
+
+    # Top annoyance drivers (psychoacoustically weighted)
+    class_stats = {}
+    for e in events:
+        cls = e[1]
+        pk = e[2] + DB_OFFSET if e[2] is not None else 0.0
+        dur = e[3] or 0.0
+        is_night = (e[4] < 7 or e[4] >= 22)
+        w = (3.0 if is_night else 1.0) * (10.0 ** (max(0.0, pk - 45.0) / 20.0)) * math.sqrt(max(1.0, dur))
+        if cls not in class_stats:
+            class_stats[cls] = {"count": 0, "night_count": 0, "max_spl": pk, "score": 0.0}
+        class_stats[cls]["count"] += 1
+        if is_night:
+            class_stats[cls]["night_count"] += 1
+        if pk > class_stats[cls]["max_spl"]:
+            class_stats[cls]["max_spl"] = pk
+        class_stats[cls]["score"] += w
+
+    top_offenders = []
+    for cls, stat in sorted(class_stats.items(), key=lambda x: x[1]["score"], reverse=True)[:5]:
+        top_offenders.append({
+            "event": cls,
+            "count": stat["count"],
+            "night_count": stat["night_count"],
+            "max_spl": round(stat["max_spl"], 1),
+        })
+
+    total_loud = sum(1 for e in events if (e[2] or -999) >= BAND_LOUD)
+    total_very_loud = sum(1 for e in events if (e[2] or -999) >= BAND_VERY)
+
+    return {
+        "day": day,
+        "rating": rating,
+        "rating_color": rating_color,
+        "rating_desc": rating_desc,
+        "night": {
+            "intrusions": len(loud_night),
+            "very_loud": len(very_loud_night),
+            "longest_quiet_min": int(round(max_gap / 60)),
+            "quiet_start": quiet_start_str,
+            "quiet_end": quiet_end_str,
+            "loudest": loudest_night,
+            "awakenings": awakenings,
+        },
+        "day_summary": {
+            "total_episodes": len(events),
+            "loud_episodes": total_loud,
+            "very_loud_episodes": total_very_loud,
+            "loudest": loudest_day,
+        },
+        "top_offenders": top_offenders,
+        "hourly_peaks": hourly_peaks,
+    }
+
+
 @app.get("/api/weekcounts")
 def api_weekcounts(
     from_: float = Query(alias="from"),
@@ -637,13 +852,6 @@ def group_of(cls):
 
 WEEKDAY_CACHE = {"ts": 0.0, "payload": {"groups": [], "grids": {}}}
 _weekday_lock = threading.Lock()
-
-
-# loudness band edges (dB SPL): green audible <= 62, yellow loud 62-67, red very loud >= 67
-DB_OFFSET = 106.6                              # calibration (dB SPL - dBFS)
-BAND_LOUD = round(62 - DB_OFFSET, 1)           # ~ -44.6 dBFS
-BAND_VERY = round(67 - DB_OFFSET, 1)           # ~ -39.6 dBFS
-WEEKDAY_THRESHOLDS = [BAND_LOUD, BAND_VERY]
 
 
 def compute_weekday_cache():
